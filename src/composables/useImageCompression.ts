@@ -19,7 +19,7 @@ export function useImageCompression() {
     if (!file) return null;
 
     // 检查文件是否为图片类型
-    if (!file.type.startsWith('image/')) {
+    if (!file || !file.type.startsWith('image/')) {
         // 如果不是图片，直接返回原始文件，不进行压缩
         return file;
     }

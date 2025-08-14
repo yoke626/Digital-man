@@ -189,11 +189,17 @@ const isImage = (url: string) => {
   return imageExtensions.some(ext => url.toLowerCase().endsWith(ext));
 };
 
-// 处理文件变化 (无变化)
-const handleFileChange = (uploadFile: UploadFile) => {
-  if (uploadFile.raw) {
-    form.value.sceneFile = uploadFile.raw;
-    fileUrlPreview.value = URL.createObjectURL(uploadFile.raw);
+// 3. 核心修改：文件选择处理函数现在调用压缩逻辑
+const handleFileChange = async (uploadFile: UploadFile) => {
+  if (!uploadFile.raw) return;
+
+  // 调用压缩函数。它能智能判断，如果不是图片，会直接返回原文件
+  const finalFile = await compressImage(uploadFile.raw);
+  
+  if (finalFile) {
+    // 存储最终的文件（可能是压缩后的图片，也可能是原始的非图片文件）
+    form.value.sceneFile = finalFile;
+    fileUrlPreview.value = URL.createObjectURL(finalFile);
   }
 };
 
@@ -209,10 +215,10 @@ const handleEdit = (scene: Scene) => {
   uiStore.openSceneAddDialog();
 };
 
-// 提交表单 (无变化)
+// 4. 核心修改：handleSubmit 检查压缩状态并使用压缩后的文件
 const handleSubmit = async () => {
   if (isCompressing.value) {
-    ElMessage.warning('正在处理图片，请稍后');
+    ElMessage.warning('正在处理图片，请稍后...');
     return;
   }
 
@@ -230,7 +236,7 @@ const handleSubmit = async () => {
       await addScene(formData);
       ElMessage.success('新增成功');
     }
-    uiStore.closeSceneAddDialog(); // 通过store关闭弹窗
+    uiStore.closeSceneAddDialog();
     fetchSceneList();
   } catch (error) {
     console.error("操作失败", error);

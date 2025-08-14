@@ -2,6 +2,33 @@ import axios from 'axios';
 import { useUserStore } from '@/stores/user';
 import { ElMessage } from 'element-plus';
 
+// 新增：一个递归函数，用于深度转换URL
+const convertUrlsToRelative = (data: any, baseUrl: string): any => {
+  if (!data) return data;
+
+  if (Array.isArray(data)) {
+    return data.map(item => convertUrlsToRelative(item, baseUrl));
+  }
+
+  if (typeof data === 'object' && data !== null) {
+    const newData: { [key: string]: any } = {};
+    for (const key in data) {
+      if (Object.prototype.hasOwnProperty.call(data, key)) {
+        let value = data[key];
+        if (typeof value === 'string' && value.startsWith(baseUrl)) {
+          // 将绝对URL替换为空字符串，得到相对路径
+          newData[key] = value.replace(baseUrl, '');
+        } else {
+          newData[key] = convertUrlsToRelative(value, baseUrl);
+        }
+      }
+    }
+    return newData;
+  }
+  return data;
+};
+
+
 const service = axios.create({
   baseURL: '/api/v1', //
   timeout: 60000,
@@ -10,16 +37,12 @@ const service = axios.create({
 // 请求拦截器
 service.interceptors.request.use(
   (config) => {
-    // 动态导入 store 以避免循环依赖
     const userStore = useUserStore();
     if (userStore.token && config.headers) {
-      config.headers['Authorization'] = `Bearer ${userStore.token}`; //
+      config.headers['Authorization'] = `Bearer ${userStore.token}`;
     }
-
-    // --- 核心修改：在这里添加绕过ngrok警告页面的请求头 ---
-    // 这个值可以是任意的字符串，"true" 只是一个示例
+    // 注意：这个头现在由Vite Proxy在服务器端添加，客户端可以不加，但保留也无妨
     config.headers['ngrok-skip-browser-warning'] = 'true';
-    
     return config;
   },
   (error) => {
@@ -27,9 +50,16 @@ service.interceptors.request.use(
   }
 );
 
-// 响应拦截器 (保持之前的修改，保持健壮性)
+// 响应拦截器
 service.interceptors.response.use(
   (response) => {
+    // 全局转换URL
+    if (response.data && response.config.baseURL) {
+        // 动态获取代理的目标地址来进行转换
+        const targetUrl = 'https://893385b0bde4.ngrok-free.app';
+        response.data = convertUrlsToRelative(response.data, targetUrl);
+    }
+
     const res = response.data;
     if (typeof res !== 'object' || res === null || res.code === undefined) {
       return response;
