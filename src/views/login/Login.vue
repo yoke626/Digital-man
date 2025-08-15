@@ -1,3 +1,43 @@
+<script setup lang="ts">
+import { ref, reactive } from 'vue';
+import type { FormInstance, FormRules } from 'element-plus';
+import { useUserStore } from '@/stores/user';
+import { ElMessage } from 'element-plus';
+
+const userStore = useUserStore();
+const loginFormRef = ref<FormInstance>();
+const loading = ref(false);
+
+const loginForm = reactive({
+  username: '',
+  password: '',
+});
+
+const loginRules = reactive<FormRules>({
+  username: [{ required: true, message: '请输入账号', trigger: 'blur' }],
+  password: [{ required: true, message: '请输入密码', trigger: 'blur' }],
+});
+
+const handleLogin = () => {
+  loginFormRef.value?.validate(async (valid) => {
+    if (valid) {
+      loading.value = true;
+      try {
+        // 调用 store 中的登录 action
+        await userStore.handleLogin(loginForm);
+        // 成功的跳转逻辑已经在 store 中处理
+        ElMessage.success('登录成功！');
+      } catch (error: any) {
+        // store 中的 API 调用如果失败（网络错误或业务错误），会抛出异常
+        console.error('登录失败:', error);
+      } finally {
+        loading.value = false;
+      }
+    }
+  });
+};
+</script>
+
 <template>
   <div class="login-container">
     <div class="login-left"></div>
@@ -31,49 +71,7 @@
   </div>
 </template>
 
-<script setup lang="ts">
-import { ref, reactive } from 'vue';
-import type { FormInstance, FormRules } from 'element-plus';
-import { useUserStore } from '@/stores/user';
-import { ElMessage } from 'element-plus';
-
-const userStore = useUserStore();
-const loginFormRef = ref<FormInstance>();
-const loading = ref(false);
-
-const loginForm = reactive({
-  username: '',
-  password: '',
-});
-
-const loginRules = reactive<FormRules>({
-  username: [{ required: true, message: '请输入账号', trigger: 'blur' }],
-  password: [{ required: true, message: '请输入密码', trigger: 'blur' }],
-});
-
-const handleLogin = () => {
-  loginFormRef.value?.validate(async (valid) => {
-    if (valid) {
-      loading.value = true;
-      try {
-        // 调用 store 中的登录 action
-        await userStore.handleLogin(loginForm);
-        // 成功的跳转逻辑已经在 store 中处理
-        ElMessage.success('登录成功！');
-      } catch (error: any) {
-        // store 中的 API 调用如果失败（网络错误或业务错误），会抛出异常
-        // 错误消息已在 request.ts 的拦截器中统一弹出，这里可以只在控制台记录
-        console.error('Login failed in view:', error);
-      } finally {
-        loading.value = false;
-      }
-    }
-  });
-};
-</script>
-
 <style lang="scss" scoped>
-/* 样式与您之前确认的版本保持一致 */
 .login-container {
   display: flex;
   width: 100vw;

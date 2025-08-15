@@ -1,3 +1,147 @@
+<script setup lang="ts">
+import { ref, computed, onMounted, watch } from 'vue';
+import { useUiStore } from '@/stores/ui';
+import { getDigitalHumanList, addDigitalHuman, updateDigitalHuman, deleteDigitalHuman, updateDigitalHumanStatus } from '@/api/digitalHuman';
+import { getAvatarList } from '@/api/avatar';
+import type { DigitalHuman } from '@/types/digitalHuman';
+import type { Avatar } from '@/types/avatar';
+import { ElMessage, ElMessageBox } from 'element-plus';
+import type { FormRules, FormInstance } from 'element-plus'
+
+// --- 数据状态 ---
+const humanList = ref<DigitalHuman[]>([]);
+const total = ref(0);
+const currentPage = ref(1);
+const pageSize = ref(4);
+
+// --- 弹窗与表单状态 ---
+const formRef = ref<FormInstance>();
+const uiStore = useUiStore();
+const dialogTitle = ref('新增数字人');
+const availableAvatars = ref<Avatar[]>([]); // 用于存储所有可用的形象
+const form = ref({
+  id: null as number | null,
+  name: '',
+  avatarId: undefined as number | undefined,
+  enableModelFallback: true,
+  enableMultiTurnDialogue: false,
+});
+const dialogVisible = computed({
+  get: () => uiStore.isDigitalHumanDialogVisible,
+  set: (val) => { if (!val) uiStore.closeDigitalHumanDialog(); }
+});
+
+const formRules = ref<FormRules>({
+  name: [
+    { required: true, message: '名称不能为空，请输入', trigger: 'blur' }
+  ],
+  avatarId: [
+    { required: true, message: '请选择一个数字人形象', trigger: 'blur' }
+  ]
+});
+
+watch(() => uiStore.isDigitalHumanDialogVisible, (newValue) => {
+  if (newValue) {
+    fetchAvailableAvatars(); // 打开弹窗时，获取最新的形象列表
+    if (form.value.id === null) {
+      dialogTitle.value = '新增数字人';
+    }
+  }
+});
+
+// --- 核心逻辑 ---
+const fetchDigitalHumanList = async () => {
+  const response = await getDigitalHumanList({ page: currentPage.value, size: pageSize.value });
+  if (response.data.code === 200) {
+    humanList.value = response.data.data.items;
+    total.value = response.data.data.total;
+  }
+};
+
+const fetchAvailableAvatars = async () => {
+  // 获取所有形象用于弹窗选择，这里不分页
+  const response = await getAvatarList({ page: 1, size: 100 }); 
+  if (response.data.code === 200) {
+    availableAvatars.value = response.data.data.items;
+  }
+};
+
+// // 5. 在弹窗打开的时候，去调用这个方法
+// watch(() => uiStore.isDigitalHumanDialogVisible, (newValue) => {
+//   if (newValue) {
+//     fetchAvailableAvatars(); // 打开弹窗时，获取最新的形象列表
+//   }
+// });
+
+const handleStatusChange = async (human: DigitalHuman) => {
+  const newStatus = human.status === 'ENABLED' ? 'DISABLED' : 'ENABLED';
+  try {
+    await updateDigitalHumanStatus(human.id, newStatus);
+    ElMessage.success('状态更新成功');
+    fetchDigitalHumanList();
+  } catch (error) {
+    ElMessage.error('状态更新失败');
+  }
+};
+
+const handleDelete = (id: number) => {
+  ElMessageBox.confirm('确定要删除这个数字人配置吗?', '警告', { type: 'warning' })
+    .then(async () => {
+      await deleteDigitalHuman(id);
+      ElMessage.success('删除成功');
+      fetchDigitalHumanList();
+    });
+};
+
+const handleEdit = (human: DigitalHuman) => {
+  dialogTitle.value = '修改数字人';
+  form.value = {
+    id: human.id,
+    name: human.name,
+    avatarId: human.avatar.id,
+    enableModelFallback: human.enableModelFallback ?? true,
+    enableMultiTurnDialogue: human.enableMultiTurnDialogue ?? false,
+  };
+  uiStore.openDigitalHumanDialog();
+};
+
+// 提交表单
+const handleSubmit = async () => {
+  // 使用解构赋值将 id 和其他字段分开
+  // 'payload' 对象将包含 form.value 中除了 id 以外的所有属性
+  const { id, ...payload } = form.value;
+
+  try {
+    if (id) { // 判断 id 是否存在且不为null
+      await updateDigitalHuman(id, payload);
+      ElMessage.success('修改成功');
+    } else {
+      await addDigitalHuman(payload);
+      ElMessage.success('新增成功');
+    }
+    uiStore.closeDigitalHumanDialog();
+    fetchDigitalHumanList();
+  } catch (error) {
+    console.error("操作失败", error);
+  }
+};
+
+const handleDialogClose = () => {
+  form.value = {
+    id: null,
+    name: '',
+    avatarId: undefined,
+    enableModelFallback: true,
+    enableMultiTurnDialogue: false,
+  };
+  uiStore.closeDigitalHumanDialog();
+};
+
+onMounted(() => {
+  fetchDigitalHumanList();
+});
+</script>
+
 <template>
   <div class="digital-human-config-container">
     <el-row :gutter="30" class="card-row">
@@ -51,11 +195,11 @@
     </div>
 
     <el-dialog v-model="dialogVisible" :title="dialogTitle" width="500px" @close="handleDialogClose">
-      <el-form :model="form" ref="formRef" label-width="100px" label-position="right">
-        <el-form-item label="数字人名称" prop="name" required>
+      <el-form :model="form" :rules="formRules" ref="formRef" label-width="100px" label-position="right">
+        <el-form-item label="数字人名称" prop="name">
           <el-input v-model="form.name" placeholder="请输入"></el-input>
         </el-form-item>
-        <el-form-item label="数字人形象" prop="avatarId" required>
+        <el-form-item label="数字人形象" prop="avatarId">
           <el-radio-group v-model="form.avatarId">
             <el-radio v-for="avatar in availableAvatars" :key="avatar.id" :label="avatar.id">
               {{ avatar.name }}
@@ -77,132 +221,6 @@
   </div>
 </template>
 
-<script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue';
-import { useUiStore } from '@/stores/ui';
-import { getDigitalHumanList, addDigitalHuman, updateDigitalHuman, deleteDigitalHuman, updateDigitalHumanStatus } from '@/api/digitalHuman';
-import { getAvatarList } from '@/api/avatar';
-import type { DigitalHuman } from '@/types/digitalHuman';
-import type { Avatar } from '@/types/avatar';
-import { ElMessage, ElMessageBox } from 'element-plus';
-
-// --- 数据状态 ---
-const humanList = ref<DigitalHuman[]>([]);
-const total = ref(0);
-const currentPage = ref(1);
-const pageSize = ref(4);
-
-// --- 弹窗与表单状态 ---
-const uiStore = useUiStore();
-const dialogTitle = ref('新增数字人');
-const availableAvatars = ref<Avatar[]>([]); // 用于存储所有可用的形象
-const form = ref({
-  id: null as number | null,
-  name: '',
-  avatarId: undefined as number | undefined,
-  enableModelFallback: true,
-  enableMultiTurnDialogue: false,
-});
-const dialogVisible = computed({
-  get: () => uiStore.isDigitalHumanDialogVisible,
-  set: (val) => { if (!val) uiStore.closeDigitalHumanDialog(); }
-});
-
-watch(() => uiStore.isDigitalHumanDialogVisible, (newValue) => {
-  if (newValue) {
-    fetchAvailableAvatars(); // 打开弹窗时，获取最新的形象列表
-    if (form.value.id === null) {
-      dialogTitle.value = '新增数字人';
-    }
-  }
-});
-
-// --- 核心逻辑 ---
-const fetchDigitalHumanList = async () => {
-  const response = await getDigitalHumanList({ page: currentPage.value, size: pageSize.value });
-  if (response.data.code === 200) {
-    humanList.value = response.data.data.items;
-    total.value = response.data.data.total;
-  }
-};
-
-const fetchAvailableAvatars = async () => {
-  // 获取所有形象用于弹窗选择，这里不分页
-  const response = await getAvatarList({ page: 1, size: 100 }); 
-  if (response.data.code === 200) {
-    availableAvatars.value = response.data.data.items;
-  }
-};
-
-const handleStatusChange = async (human: DigitalHuman) => {
-  const newStatus = human.status === 'ENABLED' ? 'DISABLED' : 'ENABLED';
-  try {
-    await updateDigitalHumanStatus(human.id, newStatus);
-    ElMessage.success('状态更新成功');
-    fetchDigitalHumanList();
-  } catch (error) {
-    ElMessage.error('状态更新失败');
-  }
-};
-
-const handleDelete = (id: number) => {
-  ElMessageBox.confirm('确定要删除这个数字人配置吗?', '警告', { type: 'warning' })
-    .then(async () => {
-      await deleteDigitalHuman(id);
-      ElMessage.success('删除成功');
-      fetchDigitalHumanList();
-    });
-};
-
-const handleEdit = (human: DigitalHuman) => {
-  dialogTitle.value = '修改数字人';
-  form.value = {
-    id: human.id,
-    name: human.name,
-    avatarId: human.avatar.id,
-    enableModelFallback: human.enableModelFallback ?? true,
-    enableMultiTurnDialogue: human.enableMultiTurnDialogue ?? false,
-  };
-  uiStore.openDigitalHumanDialog();
-};
-
-// 提交表单 (核心修正)
-const handleSubmit = async () => {
-  // 使用解构赋值将 id 和其他字段分开
-  // 'payload' 对象将包含 form.value 中除了 id 以外的所有属性
-  const { id, ...payload } = form.value;
-
-  try {
-    if (id) { // 判断 id 是否存在且不为null
-      await updateDigitalHuman(id, payload);
-      ElMessage.success('修改成功');
-    } else {
-      await addDigitalHuman(payload);
-      ElMessage.success('新增成功');
-    }
-    uiStore.closeDigitalHumanDialog();
-    fetchDigitalHumanList();
-  } catch (error) {
-    console.error("操作失败", error);
-  }
-};
-
-const handleDialogClose = () => {
-  form.value = {
-    id: null,
-    name: '',
-    avatarId: undefined,
-    enableModelFallback: true,
-    enableMultiTurnDialogue: false,
-  };
-  uiStore.closeDigitalHumanDialog();
-};
-
-onMounted(() => {
-  fetchDigitalHumanList();
-});
-</script>
-
 <style lang="scss" scoped>
 .digital-human-config-container {
   display: flex;
@@ -217,7 +235,6 @@ onMounted(() => {
   padding-top: 20px;
 }
 
-/* --- 核心修改部分 --- */
 .human-card {
   border-radius: 12px;
   .card-content {
@@ -244,8 +261,6 @@ onMounted(() => {
   height: 200px; /* 与图片高度保持一致 */
   justify-content: space-between;
 }
-/* --- 核心修改部分结束 --- */
-
 
 .info-header {
   display: flex;

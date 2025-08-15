@@ -2,11 +2,10 @@ import { defineStore } from 'pinia';
 import { ref } from 'vue';
 
 export const useUploadStore = defineStore('upload', () => {
-  // --- State ---
+
   const isUploading = ref(false);
   const progress = ref(0);
 
-  // --- Actions ---
   function startUpload() {
     isUploading.value = true;
     progress.value = 0;

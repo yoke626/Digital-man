@@ -2,7 +2,7 @@ import axios from 'axios';
 import { useUserStore } from '@/stores/user';
 import { ElMessage } from 'element-plus';
 
-// 新增：一个递归函数，用于深度转换URL
+// 新增：一个递归函数，用于深度转换URL （将后端传来的完整资源路径转换为相对路径）
 const convertUrlsToRelative = (data: any, baseUrl: string): any => {
   if (!data) return data;
 
@@ -30,7 +30,7 @@ const convertUrlsToRelative = (data: any, baseUrl: string): any => {
 
 
 const service = axios.create({
-  baseURL: '/api/v1', //
+  baseURL: '/api/v1', // 所有请求的基础路径，会和 vite.config.ts 的 /api 匹配
   timeout: 60000,
 });
 
@@ -56,7 +56,7 @@ service.interceptors.response.use(
     // 全局转换URL
     if (response.data && response.config.baseURL) {
         // 动态获取代理的目标地址来进行转换
-        const targetUrl = 'https://893385b0bde4.ngrok-free.app';
+        const targetUrl = 'https://01e0023522be.ngrok-free.app';
         response.data = convertUrlsToRelative(response.data, targetUrl);
     }
 
@@ -76,5 +76,5 @@ service.interceptors.response.use(
   }
 );
 
-// 关键：确保有默认导出
+// 确保有默认导出
 export default service;

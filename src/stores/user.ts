@@ -1,5 +1,3 @@
-// src/stores/user.ts
-
 import { defineStore } from 'pinia';
 import { ref } from 'vue';
 import { login as loginApi } from '@/api/auth';
@@ -19,7 +17,7 @@ export const useUserStore = defineStore(
       if (apiResponse.code === 200) {
         token.value = apiResponse.data.token;
         username.value = payload.username;
-        router.push('/digital-human');
+        router.push('/digital-human'); // 登录成功后跳转
       }
       return apiResponse;
     };
@@ -37,11 +35,10 @@ export const useUserStore = defineStore(
       logout,
     };
   },
-  // --- 核心修改：确保 persist 对象的结构正确 ---
   {
-    persist: {
-      storage: localStorage, // 您可以明确指定存储方式
-      pick: ['token', 'username'], // 要持久化的 state 字段
+    persist: {  // 配置持久化
+      storage: localStorage, // 指定存储方式为浏览器的 localstorage
+      pick: ['token', 'username'],
     },
   }
 );

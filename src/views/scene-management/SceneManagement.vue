@@ -1,3 +1,180 @@
+<script setup lang="ts">
+import { ref, onMounted, computed, watch } from 'vue'; 
+import { useUiStore } from '@/stores/ui'; 
+import { getSceneList, deleteScene, selectScene, addScene, updateScene } from '@/api/scene';
+import type { Scene } from '@/types/scene';
+import { ElMessage, ElMessageBox } from 'element-plus';
+import type { UploadFile } from 'element-plus';
+import { useImageCompression } from '@/composables/useImageCompression';
+
+const { isCompressing, compressImage } = useImageCompression();
+
+// --- 数据状态 ---
+const sceneList = ref<Scene[]>([]);
+const total = ref(0);
+const loading = ref(false);
+const currentPage = ref(1);
+const pageSize = ref(3);
+
+// --- 弹窗与表单状态 ---
+const uiStore = useUiStore();
+const formRef = ref<any>(null);
+const dialogTitle = ref('新增场景');
+
+// 弹窗的v-model直接绑定到store的状态
+const dialogVisible = computed({
+  get: () => uiStore.isSceneAddDialogVisible,
+  set: (val) => {
+    if (!val) {
+      uiStore.closeSceneAddDialog();
+    }
+  }
+});
+
+// 表单数据模型
+const form = ref<{
+  id: number | null;
+  name: string;
+  sceneFile: File | null;
+}>({
+  id: null,
+  name: '',
+  sceneFile: null,
+});
+const fileUrlPreview = ref('');
+
+// --- 核心逻辑 ---
+
+// 监听Pinia中弹窗状态的变化
+watch(() => uiStore.isSceneAddDialogVisible, (newValue) => {
+  // 仅在弹窗从“关闭”变为“打开”时执行
+  if (newValue) {
+    // 如果表单ID不是一个有效的数字（即它为null），
+    // 证明这不是一个“修改”操作，而是一个“新增”操作，
+    if (typeof form.value.id !== 'number') {
+      dialogTitle.value = '新增场景';
+    }
+  }
+});
+
+// 获取场景列表
+const fetchSceneList = async () => {
+  loading.value = true;
+  try {
+    const response = await getSceneList({ page: currentPage.value, size: pageSize.value });
+    const apiResponse = response.data;
+    if (apiResponse.code === 200) {
+      sceneList.value = apiResponse.data.items;
+      total.value = apiResponse.data.total;
+    }
+  } finally {
+    loading.value = false;
+  }
+};
+
+// 删除场景
+const handleDelete = (id: number) => {
+  ElMessageBox.confirm('确定要删除这个场景吗?', '警告', { type: 'warning' })
+    .then(async () => {
+      await deleteScene(id);
+      ElMessage.success('删除成功');
+      if (sceneList.value.length === 1 && currentPage.value > 1) {
+        currentPage.value--;
+      }
+      fetchSceneList();
+    });
+};
+
+// 设为已选
+const handleSelect = async (id: number) => {
+  try {
+    const response = await selectScene(id);
+    if (response.data.code === 200) {
+      ElMessage.success('场景已设为当前选中');
+      fetchSceneList();
+    }
+  } catch (error) {
+    console.error("设置失败", error);
+  }
+};
+
+// 检查文件类型
+const isImage = (url: string) => {
+  const imageExtensions = ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg'];
+  return imageExtensions.some(ext => url.toLowerCase().endsWith(ext));
+};
+
+// 3. 文件选择处理函数现在调用压缩逻辑
+const handleFileChange = async (uploadFile: UploadFile) => {
+  if (!uploadFile.raw) return;
+
+  // 调用压缩函数，如果不是图片，会直接返回原文件
+  const finalFile = await compressImage(uploadFile.raw);
+  
+  if (finalFile) {
+    // 存储最终的文件（可能是压缩后的图片，也可能是原始的非图片文件）
+    form.value.sceneFile = finalFile;
+    fileUrlPreview.value = URL.createObjectURL(finalFile);
+  }
+};
+
+// 打开修改弹窗
+const handleEdit = (scene: Scene) => {
+  // 1. 先填充表单
+  dialogTitle.value = '修改场景';
+  form.value.id = scene.id;
+  form.value.name = scene.name;
+  fileUrlPreview.value = scene.sceneUrl;
+  
+  // 2. 再打开弹窗
+  uiStore.openSceneAddDialog();
+};
+
+// 4. handleSubmit 检查压缩状态并使用压缩后的文件
+const handleSubmit = async () => {
+  if (isCompressing.value) {
+    ElMessage.warning('正在处理图片，请稍后...');
+    return;
+  }
+
+  const formData = new FormData();
+  formData.append('name', form.value.name);
+  if (form.value.sceneFile) {
+    formData.append('sceneFile', form.value.sceneFile);
+  }
+
+  try {
+    if (form.value.id) {
+      await updateScene(form.value.id, formData);
+      ElMessage.success('修改成功');
+    } else {
+      await addScene(formData);
+      ElMessage.success('新增成功');
+    }
+    uiStore.closeSceneAddDialog();
+    fetchSceneList();
+  } catch (error) {
+    console.error("操作失败", error);
+  }
+};
+
+// 关闭弹窗并重置表单
+const handleDialogClose = () => {
+  // 重置表单状态
+  form.value.id = null;
+  form.value.name = '';
+  form.value.sceneFile = null;
+  fileUrlPreview.value = '';
+  formRef.value?.clearValidate();
+  // 确保关闭动作也同步到store
+  uiStore.closeSceneAddDialog();
+};
+
+onMounted(() => {
+  fetchSceneList();
+});
+</script>
+
 <template>
   <div class="scene-management-container">
     <el-row :gutter="20" class="card-row">
@@ -81,188 +258,7 @@
   </div>
 </template>
 
-<script setup lang="ts">
-import { ref, onMounted, computed, watch } from 'vue'; // 确保引入 watch 和 computed
-import { useUiStore } from '@/stores/ui'; // 引入 ui store
-import { getSceneList, deleteScene, selectScene, addScene, updateScene } from '@/api/scene';
-import type { Scene } from '@/types/scene';
-import { ElMessage, ElMessageBox } from 'element-plus';
-import type { UploadFile } from 'element-plus';
-import { useImageCompression } from '@/composables/useImageCompression';
-
-const { isCompressing, compressImage } = useImageCompression();
-
-// --- 数据状态 (无变化) ---
-const sceneList = ref<Scene[]>([]);
-const total = ref(0);
-const loading = ref(false);
-const currentPage = ref(1);
-const pageSize = ref(3);
-
-// --- 弹窗与表单状态 (核心修正) ---
-const uiStore = useUiStore();
-const formRef = ref<any>(null);
-const dialogTitle = ref('新增场景');
-
-// 弹窗的v-model直接绑定到store的状态
-const dialogVisible = computed({
-  get: () => uiStore.isSceneAddDialogVisible,
-  set: (val) => {
-    if (!val) {
-      uiStore.closeSceneAddDialog();
-    }
-  }
-});
-
-// 表单数据模型
-const form = ref<{
-  id: number | null;
-  name: string;
-  sceneFile: File | null;
-}>({
-  id: null,
-  name: '',
-  sceneFile: null,
-});
-const fileUrlPreview = ref('');
-
-// --- 核心逻辑 ---
-
-// 监听Pinia中弹窗状态的变化
-watch(() => uiStore.isSceneAddDialogVisible, (newValue) => {
-  // 仅在弹窗从“关闭”变为“打开”时执行
-  if (newValue) {
-    // 如果表单ID不是一个有效的数字（即它为null），
-    // 证明这不是一个“修改”操作，而是一个“新增”操作，
-    // 因此我们需要重置表单。
-    if (typeof form.value.id !== 'number') {
-      dialogTitle.value = '新增场景';
-      // 重置表单的其他字段... (handleDialogClose已经做了)
-    }
-  }
-});
-
-// 获取场景列表 (无变化)
-const fetchSceneList = async () => {
-  loading.value = true;
-  try {
-    const response = await getSceneList({ page: currentPage.value, size: pageSize.value });
-    const apiResponse = response.data;
-    if (apiResponse.code === 200) {
-      sceneList.value = apiResponse.data.items;
-      total.value = apiResponse.data.total;
-    }
-  } finally {
-    loading.value = false;
-  }
-};
-
-// 删除场景 (无变化)
-const handleDelete = (id: number) => {
-  ElMessageBox.confirm('确定要删除这个场景吗?', '警告', { type: 'warning' })
-    .then(async () => {
-      await deleteScene(id);
-      ElMessage.success('删除成功');
-      if (sceneList.value.length === 1 && currentPage.value > 1) {
-        currentPage.value--;
-      }
-      fetchSceneList();
-    });
-};
-
-// 设为已选 (无变化)
-const handleSelect = async (id: number) => {
-  try {
-    const response = await selectScene(id);
-    if (response.data.code === 200) {
-      ElMessage.success('场景已设为当前选中');
-      fetchSceneList();
-    }
-  } catch (error) {
-    console.error("设置失败", error);
-  }
-};
-
-// 检查文件类型 (无变化)
-const isImage = (url: string) => {
-  const imageExtensions = ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg'];
-  return imageExtensions.some(ext => url.toLowerCase().endsWith(ext));
-};
-
-// 3. 核心修改：文件选择处理函数现在调用压缩逻辑
-const handleFileChange = async (uploadFile: UploadFile) => {
-  if (!uploadFile.raw) return;
-
-  // 调用压缩函数。它能智能判断，如果不是图片，会直接返回原文件
-  const finalFile = await compressImage(uploadFile.raw);
-  
-  if (finalFile) {
-    // 存储最终的文件（可能是压缩后的图片，也可能是原始的非图片文件）
-    form.value.sceneFile = finalFile;
-    fileUrlPreview.value = URL.createObjectURL(finalFile);
-  }
-};
-
-// 打开修改弹窗 (核心修正)
-const handleEdit = (scene: Scene) => {
-  // 1. 先填充表单
-  dialogTitle.value = '修改场景';
-  form.value.id = scene.id;
-  form.value.name = scene.name;
-  fileUrlPreview.value = scene.sceneUrl;
-  
-  // 2. 再打开弹窗
-  uiStore.openSceneAddDialog();
-};
-
-// 4. 核心修改：handleSubmit 检查压缩状态并使用压缩后的文件
-const handleSubmit = async () => {
-  if (isCompressing.value) {
-    ElMessage.warning('正在处理图片，请稍后...');
-    return;
-  }
-
-  const formData = new FormData();
-  formData.append('name', form.value.name);
-  if (form.value.sceneFile) {
-    formData.append('sceneFile', form.value.sceneFile);
-  }
-
-  try {
-    if (form.value.id) {
-      await updateScene(form.value.id, formData);
-      ElMessage.success('修改成功');
-    } else {
-      await addScene(formData);
-      ElMessage.success('新增成功');
-    }
-    uiStore.closeSceneAddDialog();
-    fetchSceneList();
-  } catch (error) {
-    console.error("操作失败", error);
-  }
-};
-
-// 关闭弹窗并重置表单 (核心修正)
-const handleDialogClose = () => {
-  // 重置表单状态
-  form.value.id = null;
-  form.value.name = '';
-  form.value.sceneFile = null;
-  fileUrlPreview.value = '';
-  formRef.value?.clearValidate();
-  // 确保关闭动作也同步到store
-  uiStore.closeSceneAddDialog();
-};
-
-// onMounted (核心修正：只保留一个)
-onMounted(() => {
-  fetchSceneList();
-});
-</script>
-
 <style lang="scss" scoped>
-/* 样式部分无需修改，保持原样 */
 .scene-management-container {
   display: flex;
   flex-direction: column;

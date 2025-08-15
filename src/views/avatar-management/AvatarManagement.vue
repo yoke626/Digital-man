@@ -1,3 +1,170 @@
+<script setup lang="ts">
+import { ref, onMounted, computed, watch } from 'vue';
+import { useUiStore } from '@/stores/ui';
+import { getAvatarList, deleteAvatar, addAvatar, updateAvatar } from '@/api/avatar';
+import type { Avatar } from '@/types/avatar';
+import { ElMessage, ElMessageBox } from 'element-plus';
+import type { UploadFile, UploadUserFile, FormRules, FormInstance } from 'element-plus';
+import { useImageCompression } from '@/composables/useImageCompression';
+
+const { isCompressing, compressImage } = useImageCompression();
+// --- 数据状态 ---
+const avatarList = ref<Avatar[]>([]); // 直接使用这个 list 来渲染
+const total = ref(0);
+const loading = ref(false);
+const currentPage = ref(1);
+const pageSize = ref(4);
+
+
+// --- 弹窗状态 ---
+const uiStore = useUiStore();
+const dialogVisible = computed({
+  get: () => uiStore.isAvatarAddDialogVisible,
+  set: (val) => { if (!val) uiStore.closeAvatarAddDialog() }
+});
+const dialogTitle = ref('新增形象');
+const formRef = ref<FormInstance>();
+const form = ref({
+  id: null as number | null,
+  name: '',
+  voice: '',
+});
+
+const formRules = ref<FormRules>({
+  name: [
+    { required: true, message: '名称不能为空，请输入', trigger: 'blur' }
+  ],
+});
+
+// 定义新的状态，专门用于存储压缩后的文件
+const staticImageFile = ref<File | null>(null);
+const dynamicImageFile = ref<File | null>(null);
+const staticImageUrlPreview = ref('');
+const dynamicImageUrlPreview = ref('');
+
+// --- 核心逻辑 ---
+const fetchAvatarList = async () => {
+  loading.value = true;
+  try {
+    const response = await getAvatarList({ page: currentPage.value, size: pageSize.value });
+    const apiResponse = response.data;
+    if (apiResponse.code === 200) {
+      avatarList.value = apiResponse.data.items;
+      total.value = apiResponse.data.total;
+    }
+  } finally {
+    loading.value = false;
+  }
+};
+
+const handleDelete = (id: number) => {
+  ElMessageBox.confirm('确定要删除这个形象吗?', '警告', { type: 'warning' })
+    .then(async () => {
+      await deleteAvatar(id);
+      ElMessage.success('删除成功');
+      // 如果删除后当前页没有数据了，返回上一页
+      if (avatarList.value.length === 1 && currentPage.value > 1) {
+        currentPage.value--;
+      }
+      fetchAvatarList();
+    });
+};
+
+// 文件选择后，立刻调用压缩函数
+const handleFileChange = async (uploadFile: UploadFile, type: 'static' | 'dynamic') => {
+  if (!uploadFile.raw) return;
+  
+  const compressedFile = await compressImage(uploadFile.raw);
+
+  if (compressedFile) {
+    const previewUrl = URL.createObjectURL(compressedFile);
+    if (type === 'static') {
+      staticImageFile.value = compressedFile;
+      staticImageUrlPreview.value = previewUrl;
+    } else {
+      dynamicImageFile.value = compressedFile;
+      dynamicImageUrlPreview.value = previewUrl;
+    }
+  }
+};
+
+const handleStaticFileChange = (uploadFile: UploadFile) => handleFileChange(uploadFile, 'static');
+const handleDynamicFileChange = (uploadFile: UploadFile) => handleFileChange(uploadFile, 'dynamic');
+
+const handleAdd = () => {
+  handleDialogClose();
+  dialogTitle.value = '新增形象';
+  uiStore.openAvatarAddDialog();
+};
+
+const handleEdit = (avatar: Avatar) => {
+  dialogTitle.value = '修改形象';
+  form.value = {
+    id: avatar.id,
+    name: avatar.name,
+    voice: avatar.voice || '',
+  };
+  // 设置图片预览
+  staticImageUrlPreview.value = avatar.staticImageUrl;
+  dynamicImageUrlPreview.value = avatar.dynamicImageUrl || '';
+  uiStore.openAvatarAddDialog();
+};
+
+
+// 确保 handleSubmit 使用的是压缩后的文件
+const handleSubmit = async () => {
+  if (isCompressing.value) {
+    ElMessage.warning('正在处理图片，请稍后...');
+    return;
+  }
+  
+  const formData = new FormData();
+  formData.append('name', form.value.name);
+  formData.append('voice', form.value.voice);
+
+  // 确保从我们新的状态变量中获取文件
+  if (staticImageFile.value) {
+    formData.append('staticImage', staticImageFile.value);
+  }
+  if (dynamicImageFile.value) {
+    formData.append('dynamicImage', dynamicImageFile.value);
+  }
+
+  try {
+    if (form.value.id) {
+      await updateAvatar(form.value.id, formData);
+      ElMessage.success('修改成功');
+    } else {
+      await addAvatar(formData);
+      ElMessage.success('新增成功');
+    }
+    uiStore.closeAvatarAddDialog();
+    fetchAvatarList();
+  } catch (error) {
+    console.error("操作失败", error);
+  }
+};
+
+// 关闭弹窗时，重置所有相关状态
+const handleDialogClose = () => {
+  form.value.id = null;
+  form.value.name = '';
+  form.value.voice = '';
+  
+  staticImageFile.value = null; // 重置压缩文件
+  dynamicImageFile.value = null; // 重置压缩文件
+  
+  staticImageUrlPreview.value = '';
+  dynamicImageUrlPreview.value = '';
+  formRef.value?.clearValidate();
+  uiStore.closeAvatarAddDialog();
+};
+
+onMounted(() => {
+  fetchAvatarList();
+});
+</script>
+
 <template>
   <div class="avatar-management-container">
     <el-row :gutter="30" class="card-row">
@@ -47,7 +214,7 @@
         </div>
       </template>
       
-      <el-form :model="form" ref="formRef" label-width="100px" label-position="right">
+      <el-form :model="form" :rules="formRules" ref="formRef" label-width="100px" label-position="right">
         <el-form-item label="形象名称" prop="name">
           <el-input v-model="form.name" placeholder="请输入"></el-input>
         </el-form-item>
@@ -111,168 +278,6 @@
   </div>
 </template>
 
-<script setup lang="ts">
-import { ref, onMounted, computed, watch } from 'vue';
-import { useUiStore } from '@/stores/ui';
-import { getAvatarList, deleteAvatar, addAvatar, updateAvatar } from '@/api/avatar';
-import type { Avatar } from '@/types/avatar';
-import { ElMessage, ElMessageBox } from 'element-plus';
-import type { UploadFile, UploadUserFile } from 'element-plus';
-import { useImageCompression } from '@/composables/useImageCompression';
-
-const { isCompressing, compressImage } = useImageCompression();
-// --- 数据状态 ---
-const avatarList = ref<Avatar[]>([]); // 直接使用这个 list 来渲染
-const total = ref(0);
-const loading = ref(false);
-const currentPage = ref(1);
-const pageSize = ref(4);
-
-// --- 移除 mockData 和 paginatedData ---
-
-// --- 弹窗状态 (保持不变) ---
-const uiStore = useUiStore();
-const dialogVisible = computed({
-  get: () => uiStore.isAvatarAddDialogVisible,
-  set: (val) => { if (!val) uiStore.closeAvatarAddDialog() }
-});
-const dialogTitle = ref('新增形象');
-const formRef = ref<any>(null);
-const form = ref({
-  id: null as number | null,
-  name: '',
-  voice: '',
-});
-
-// 2. 定义新的状态，专门用于存储压缩后的文件
-const staticImageFile = ref<File | null>(null);
-const dynamicImageFile = ref<File | null>(null);
-const staticImageUrlPreview = ref('');
-const dynamicImageUrlPreview = ref('');
-
-// --- 核心逻辑 (保持不变, 已是正确实现) ---
-const fetchAvatarList = async () => {
-  loading.value = true;
-  try {
-    const response = await getAvatarList({ page: currentPage.value, size: pageSize.value });
-    const apiResponse = response.data;
-    if (apiResponse.code === 200) {
-      avatarList.value = apiResponse.data.items;
-      total.value = apiResponse.data.total;
-    }
-  } finally {
-    loading.value = false;
-  }
-};
-
-const handleDelete = (id: number) => {
-  ElMessageBox.confirm('确定要删除这个形象吗?', '警告', { type: 'warning' })
-    .then(async () => {
-      await deleteAvatar(id);
-      ElMessage.success('删除成功');
-      // 如果删除后当前页没有数据了，最好返回上一页
-      if (avatarList.value.length === 1 && currentPage.value > 1) {
-        currentPage.value--;
-      }
-      fetchAvatarList();
-    });
-};
-
-// 3. 文件选择后，立刻调用压缩函数
-const handleFileChange = async (uploadFile: UploadFile, type: 'static' | 'dynamic') => {
-  if (!uploadFile.raw) return;
-  
-  const compressedFile = await compressImage(uploadFile.raw);
-
-  if (compressedFile) {
-    const previewUrl = URL.createObjectURL(compressedFile);
-    if (type === 'static') {
-      staticImageFile.value = compressedFile;
-      staticImageUrlPreview.value = previewUrl;
-    } else {
-      dynamicImageFile.value = compressedFile;
-      dynamicImageUrlPreview.value = previewUrl;
-    }
-  }
-};
-
-const handleStaticFileChange = (uploadFile: UploadFile) => handleFileChange(uploadFile, 'static');
-const handleDynamicFileChange = (uploadFile: UploadFile) => handleFileChange(uploadFile, 'dynamic');
-
-const handleAdd = () => {
-  handleDialogClose();
-  dialogTitle.value = '新增形象';
-  uiStore.openAvatarAddDialog();
-};
-
-const handleEdit = (avatar: Avatar) => {
-  dialogTitle.value = '修改形象';
-  form.value = {
-    id: avatar.id,
-    name: avatar.name,
-    voice: avatar.voice || '',
-  };
-  // 设置图片预览
-  staticImageUrlPreview.value = avatar.staticImageUrl;
-  dynamicImageUrlPreview.value = avatar.dynamicImageUrl || '';
-  uiStore.openAvatarAddDialog();
-};
-
-
-// 4. 确保 handleSubmit 使用的是压缩后的文件
-const handleSubmit = async () => {
-  if (isCompressing.value) {
-    ElMessage.warning('正在处理图片，请稍后...');
-    return;
-  }
-  
-  const formData = new FormData();
-  formData.append('name', form.value.name);
-  formData.append('voice', form.value.voice);
-
-  // 关键：确保从我们新的状态变量中获取文件
-  if (staticImageFile.value) {
-    formData.append('staticImage', staticImageFile.value);
-  }
-  if (dynamicImageFile.value) {
-    formData.append('dynamicImage', dynamicImageFile.value);
-  }
-
-  try {
-    if (form.value.id) {
-      await updateAvatar(form.value.id, formData);
-      ElMessage.success('修改成功');
-    } else {
-      await addAvatar(formData);
-      ElMessage.success('新增成功');
-    }
-    uiStore.closeAvatarAddDialog();
-    fetchAvatarList();
-  } catch (error) {
-    console.error("操作失败", error);
-  }
-};
-
-// 5. 关闭弹窗时，重置所有相关状态
-const handleDialogClose = () => {
-  form.value.id = null;
-  form.value.name = '';
-  form.value.voice = '';
-  
-  staticImageFile.value = null; // 重置压缩文件
-  dynamicImageFile.value = null; // 重置压缩文件
-  
-  staticImageUrlPreview.value = '';
-  dynamicImageUrlPreview.value = '';
-  formRef.value?.clearValidate();
-  uiStore.closeAvatarAddDialog();
-};
-
-onMounted(() => {
-  fetchAvatarList();
-});
-</script>
-
 <style lang="scss" scoped>
 .avatar-management-container {
   display: flex;
@@ -329,9 +334,7 @@ onMounted(() => {
   }
 }
 
-/* --- 核心修改部分 --- */
-
-/* 1. 调整弹窗Body的内边距，减少垂直方向的留白 */
+/* 调整弹窗Body的内边距，减少垂直方向的留白 */
 :deep(.avatar-dialog .el-dialog__body) {
   padding-top: 15px;
   padding-bottom: 20px; 
@@ -354,7 +357,7 @@ onMounted(() => {
   :deep(.el-upload) {
     width: 100%;
   }
-  /* 2. 精确减少文件上传拖拽区域的垂直内边距，这是最关键的修改 */
+  /* 精确减少文件上传拖拽区域的垂直内边距 */
   :deep(.el-upload-dragger) {
     padding-top: 10px;
     padding-bottom: 10px;
@@ -364,7 +367,7 @@ onMounted(() => {
   }
   .avatar-preview {
     max-width: 60%;
-    /* 3. 适当减小预览图的最大高度，防止图片撑开容器 */
+    /* 适当减小预览图的最大高度，防止图片撑开容器 */
     max-height: 110px; 
   }
   .upload-placeholder {
@@ -382,7 +385,7 @@ onMounted(() => {
   flex-shrink: 0;
 }
 
-/* 核心修改：为加载失败的占位图添加样式 */
+/* 为加载失败的占位图添加样式 */
 .image-slot-error {
   display: flex;
   flex-direction: column;

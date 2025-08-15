@@ -1,3 +1,34 @@
+<script setup lang="ts">
+import { useRoute } from 'vue-router'
+import { useUiStore } from '@/stores/ui';
+import { Plus, SwitchButton } from '@element-plus/icons-vue' 
+import { useUserStore } from '@/stores/user'
+import GlobalUploader from '../common/GlobalUploader.vue';
+
+const route = useRoute();
+const uiStore = useUiStore(); 
+const userStore = useUserStore();
+
+// 退出登录
+const handleLogout = () => {
+  userStore.logout(); // 调用 store 中的 logout action
+};
+
+const handleAddButtonClick = () => {
+  // 根据当前路由判断应该打开哪个弹窗
+  if (route.name === 'AvatarManagement') {
+    uiStore.openAvatarAddDialog();
+  }
+  else if (route.name === 'SceneManagement') {
+    uiStore.openSceneAddDialog();
+  }
+  else if (route.name === 'DigitalHuman') {
+    uiStore.openDigitalHumanDialog();
+  }
+}
+
+</script>
+
 <template>
   <GlobalUploader />
 
@@ -44,22 +75,6 @@
     </el-aside>
 
     <el-container>
-      <!-- <el-header class="header">
-        <div>动态面包屑或其他</div>
-        <div class="user-info">
-          <el-dropdown>
-            <span class="el-dropdown-link">
-              Admin<el-icon class="el-icon--right"><arrow-down /></el-icon>
-            </span>
-            <template #dropdown>
-              <el-dropdown-menu>
-                <el-dropdown-item>个人中心</el-dropdown-item>
-                <el-dropdown-item divided @click="$router.push('/login')">退出登录</el-dropdown-item>
-              </el-dropdown-menu>
-            </template>
-          </el-dropdown>
-        </div>
-      </el-header> -->
       <el-main class="main-content">
         <div class="page-header">
           <div class="page-title">
@@ -80,42 +95,6 @@
     </el-container>
   </el-container>
 </template>
-
-<script setup lang="ts">
-// UI先行，暂时无需逻辑
-import { useRoute } from 'vue-router'
-// --- 核心修改：在这里导入 Plus 图标 ---
-import { useUiStore } from '@/stores/ui';
-
-import { Plus, SwitchButton } from '@element-plus/icons-vue' // 引入 SwitchButton 图标
-import { useUserStore } from '@/stores/user' // 引入 user store
-import GlobalUploader from '../common/GlobalUploader.vue';
-
-const route = useRoute();
-const uiStore = useUiStore(); // 获取UI store实例
-const userStore = useUserStore(); // 获取 store 实例
-
-// 退出登录的处理函数
-const handleLogout = () => {
-  userStore.logout(); // 调用 store 中的 logout action
-};
-
-const handleAddButtonClick = () => {
-  // 3. 根据当前路由判断应该打开哪个弹窗
-  if (route.name === 'AvatarManagement') {
-    uiStore.openAvatarAddDialog();
-  }
-  // --- 核心修改：调用Pinia store中的新方法 ---
-  else if (route.name === 'SceneManagement') {
-    uiStore.openSceneAddDialog();
-  }
-  // --- 新增代码 ---
-  else if (route.name === 'DigitalHuman') {
-    uiStore.openDigitalHumanDialog();
-  }
-}
-
-</script>
 
 <style lang="scss" scoped>
 .layout-container {
@@ -177,24 +156,8 @@ const handleAddButtonClick = () => {
   }
 }
 
-// .header {
-//   display: flex;
-//   justify-content: space-between;
-//   align-items: center;
-//   background-color: #f7f8fa;
-//   z-index: 10;
-// }
-// .user-info .el-dropdown-link {
-//   cursor: pointer;
-//   display: flex;
-//   align-items: center;
-// }
-
-/* --- 其他部分样式 --- */
-
-
 .main-content {
-  /* 新增：让 main-content 自身也成为弹性容器 */
+  /*让 main-content 自身也成为弹性容器 */
   display: flex;
   flex-direction: column;
   // background-color: #f7f8fa;
@@ -233,7 +196,7 @@ const handleAddButtonClick = () => {
 }
 
 .page-content {
-  /* 新增：让 page-content 占据所有可用的垂直空间 */
+  /* 让 page-content 占据所有可用的垂直空间 */
   flex-grow: 1;
 }
 
@@ -246,7 +209,7 @@ const handleAddButtonClick = () => {
   z-index: 10;
 }
 
-/* --- 新增：底部用户信息和退出登录模块样式 --- */
+/* --- 底部用户信息和退出登录模块样式 --- */
 .sidebar-footer {
   flex-shrink: 0; /* 防止被压缩 */
   padding: 350px 10px 0 10px;

@@ -1,5 +1,3 @@
-// vite.config.ts
-
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import { viteMockServe } from 'vite-plugin-mock'
@@ -12,28 +10,23 @@ export default defineConfig(({ command }) => {
       vue(),
       viteMockServe({
         mockPath: 'mock',
-        // 关键：在联调时，我们通常禁用 mock
-        enable: false, 
+        enable: false,  // 联调时设置为 false， 前期做UI时设置为 true
       }),
     ],
     resolve: {
       alias: {
-        '@': path.resolve(__dirname, './src'),
+        '@': path.resolve(__dirname, './src'), // 配置 @ 别名，方便导入
       },
     },
-    // --- 核心修改：添加 server.proxy 配置 ---
     server: {
+      // 服务器代理 proxy，前端开发解决跨域问题的最佳实践
       proxy: {
-        // 关键：将所有以 /api 开头的请求，都代理到您的ngrok服务器
-        '/api': {
-          target: 'https://893385b0bde4.ngrok-free.app', // 使用您后端最新的ngrok地址
-          changeOrigin: true, // 必须
-          // 如果后端接口路径没有 /api/v1，可以用 rewrite 去掉
-          //rewrite: (path) => path.replace(/^\/api\/v1/, ''),
-          // 我们还需要重写请求头，确保 ngrok-skip-browser-warning 被加上
+        '/api': { // 拦截所有以 /api 开头的请求
+          target: 'https://01e0023522be.ngrok-free.app', // 代理到后端服务器地址
+          changeOrigin: true, // 必须，否则可能代理失败
           configure: (proxy, options) => {
             proxy.on('proxyReq', (proxyReq, req, res) => {
-              proxyReq.setHeader('ngrok-skip-browser-warning', 'true');
+              proxyReq.setHeader('ngrok-skip-browser-warning', 'true'); // 绕过 ngrok 的浏览器警告
             });
           }
         },

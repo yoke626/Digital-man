@@ -2,19 +2,10 @@ import { ref } from 'vue';
 import imageCompression from 'browser-image-compression';
 import { ElMessage } from 'element-plus';
 
-/**
- * 全局可复用的图片压缩组合式函数
- * @returns {object} 包含压缩状态和压缩方法的对象
- */
 export function useImageCompression() {
   // 压缩状态，用于在UI上显示加载中/禁用按钮
   const isCompressing = ref(false);
 
-  /**
-   * 压缩图片的核心方法
-   * @param {File} file - 用户选择的原始图片文件
-   * @returns {Promise<File | null>} 返回一个Promise，解析为压缩后的File对象，或在失败时解析为null
-   */
   const compressImage = async (file: File): Promise<File | null> => {
     if (!file) return null;
 

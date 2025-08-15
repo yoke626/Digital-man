@@ -1,9 +1,8 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import Layout from '@/components/layout/Layout.vue'
 
-// 该文件现在只负责创建和导出 router 实例
 const router = createRouter({
-  history: createWebHistory(import.meta.env.BASE_URL),
+  history: createWebHistory(import.meta.env.BASE_URL), // 使用 H5 History 模式，URL 更美观（没有 #）
   routes: [
     {
       path: '/',
@@ -12,8 +11,8 @@ const router = createRouter({
     {
       path: '/login',
       name: 'Login',
-      component: () => import('../views/login/Login.vue'),
-      meta: { requiresAuth: false } // 不需要认证
+      component: () => import('../views/login/Login.vue'), // 组件懒加载
+      meta: { requiresAuth: false } // meta 字段用于存放自定义数据
     },
     {
       path: '/register',
@@ -25,7 +24,7 @@ const router = createRouter({
       path: '/main',
       component: Layout,
       redirect: '/digital-human',
-      children: [
+      children: [ // 嵌套路由，共享 Layout 布局
         {
           path: '/digital-human',
           name: 'DigitalHuman',

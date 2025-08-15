@@ -1,31 +1,3 @@
-<template>
-  <div class="register-container">
-    <div class="register-left"></div>
-    <div class="register-right">
-      <div class="register-form-wrapper">
-        <h3 class="title">创建您的账号</h3>
-        <el-form ref="registerFormRef" :model="registerForm" :rules="registerRules" class="register-form">
-          <el-form-item prop="username">
-            <el-input v-model="registerForm.username" size="large" placeholder="请输入用户名" />
-          </el-form-item>
-          <el-form-item prop="password">
-            <el-input v-model="registerForm.password" size="large" type="password" placeholder="请输入密码" show-password />
-          </el-form-item>
-          <el-form-item prop="confirmPassword">
-            <el-input v-model="registerForm.confirmPassword" size="large" type="password" placeholder="请再次输入密码" show-password />
-          </el-form-item>
-          <el-form-item>
-            <el-button :loading="loading" type="primary" size="large" class="register-button" @click="handleRegister">注 册</el-button>
-          </el-form-item>
-          <div class="form-footer">
-            <el-link type="primary" @click="$router.push('/login')">已有账号？去登录</el-link>
-          </div>
-        </el-form>
-      </div>
-    </div>
-  </div>
-</template>
-
 <script setup lang="ts">
 import { ref, reactive } from 'vue';
 import { useRouter } from 'vue-router';
@@ -70,7 +42,6 @@ const handleRegister = () => {
           ElMessage.success('注册成功！');
           router.push('/login');
         } else {
-          // 接口文档中没有明确定义注册失败的code，这里做一个通用处理
           ElMessage.error(res.data.message || '注册失败');
         }
       } catch (error: any) {
@@ -84,8 +55,36 @@ const handleRegister = () => {
 };
 </script>
 
+<template>
+  <div class="register-container">
+    <div class="register-left"></div>
+    <div class="register-right">
+      <div class="register-form-wrapper">
+        <h3 class="title">创建您的账号</h3>
+        <el-form ref="registerFormRef" :model="registerForm" :rules="registerRules" class="register-form">
+          <el-form-item prop="username">
+            <el-input v-model="registerForm.username" size="large" placeholder="请输入用户名" />
+          </el-form-item>
+          <el-form-item prop="password">
+            <el-input v-model="registerForm.password" size="large" type="password" placeholder="请输入密码" show-password />
+          </el-form-item>
+          <el-form-item prop="confirmPassword">
+            <el-input v-model="registerForm.confirmPassword" size="large" type="password" placeholder="请再次输入密码" show-password />
+          </el-form-item>
+          <el-form-item>
+            <el-button :loading="loading" type="primary" size="large" class="register-button" @click="handleRegister">注 册</el-button>
+          </el-form-item>
+          <div class="form-footer">
+            <el-link type="primary" @click="$router.push('/login')">已有账号？去登录</el-link>
+          </div>
+        </el-form>
+      </div>
+    </div>
+  </div>
+</template>
+
 <style lang="scss" scoped>
-// 样式与登录页保持一致，可以复用或单独定义
+// 样式与登录页保持一致
 .register-container {
   display: flex;
   width: 100vw;
@@ -132,7 +131,7 @@ const handleRegister = () => {
 
 .form-footer {
   display: flex;
-  justify-content: flex-end; /* 右对齐 */
+  justify-content: flex-end; 
   margin-top: 15px;
   width: 100%;
 }

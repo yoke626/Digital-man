@@ -41,43 +41,17 @@ export const updateAvatar = (id: number, data: FormData) => {
   });
 };
 
-// 1. 获取形象列表（分页）[cite: 73]
 export const getAvatarList = (params: PaginationParams) => {
   return request<ApiResponse<PaginatedData<Avatar>>>({
-    url: '/avatars', // [cite: 75]
-    method: 'GET', // [cite: 76]
+    url: '/avatars', 
+    method: 'GET',
     params,
   })
 }
 
-// 2. 删除形象 [cite: 117]
 export const deleteAvatar = (id: number) => {
   return request<ApiResponse>({
-    url: `/avatars/${id}`, // [cite: 118]
-    method: 'DELETE', // [cite: 119]
+    url: `/avatars/${id}`, 
+    method: 'DELETE', 
   })
 }
-
-// // 3. 新增形象 (使用 FormData) [cite: 51]
-// export const addAvatar = (data: FormData) => {
-//   return request<ApiResponse<Avatar>>({
-//     url: '/avatars', // [cite: 52]
-//     method: 'POST', // [cite: 53]
-//     data,
-//     headers: {
-//       'Content-Type': 'multipart/form-data', // [cite: 54]
-//     },
-//   })
-// }
-
-// // 4. 修改形象 (使用 FormData) [cite: 100]
-// export const updateAvatar = (id: number, data: FormData) => {
-//   return request<ApiResponse<Avatar>>({
-//     url: `/avatars/${id}`, // [cite: 101]
-//     method: 'PUT', // [cite: 102]
-//     data,
-//     headers: {
-//       'Content-Type': 'multipart/form-data', // [cite: 103]
-//     },
-//   })
-// }
