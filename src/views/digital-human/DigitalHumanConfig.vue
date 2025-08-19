@@ -40,6 +40,7 @@ const formRules = ref<FormRules>({
   ]
 });
 
+// 5. 在弹窗打开的时候，去调用这个方法
 watch(() => uiStore.isDigitalHumanDialogVisible, (newValue) => {
   if (newValue) {
     fetchAvailableAvatars(); // 打开弹窗时，获取最新的形象列表
@@ -65,13 +66,6 @@ const fetchAvailableAvatars = async () => {
     availableAvatars.value = response.data.data.items;
   }
 };
-
-// // 5. 在弹窗打开的时候，去调用这个方法
-// watch(() => uiStore.isDigitalHumanDialogVisible, (newValue) => {
-//   if (newValue) {
-//     fetchAvailableAvatars(); // 打开弹窗时，获取最新的形象列表
-//   }
-// });
 
 const handleStatusChange = async (human: DigitalHuman) => {
   const newStatus = human.status === 'ENABLED' ? 'DISABLED' : 'ENABLED';
@@ -226,9 +220,12 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   height: 100%;
+  overflow: hidden;
 }
 .card-row {
   flex-grow: 1;
+  overflow-y: auto;
+  padding-right: 5px; /* 为滚动条预留空间 */
 }
 .pagination-container {
   margin-top: auto;

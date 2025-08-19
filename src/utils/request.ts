@@ -56,7 +56,7 @@ service.interceptors.response.use(
     // 全局转换URL
     if (response.data && response.config.baseURL) {
         // 动态获取代理的目标地址来进行转换
-        const targetUrl = 'https://01e0023522be.ngrok-free.app';
+        const targetUrl = 'https://7d0449b36d4a.ngrok-free.app';
         response.data = convertUrlsToRelative(response.data, targetUrl);
     }
 

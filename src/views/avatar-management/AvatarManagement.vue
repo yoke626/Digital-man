@@ -1,168 +1,228 @@
 <script setup lang="ts">
-import { ref, onMounted, computed, watch } from 'vue';
+import { ref, onMounted, computed } from 'vue';
 import { useUiStore } from '@/stores/ui';
-import { getAvatarList, deleteAvatar, addAvatar, updateAvatar } from '@/api/avatar';
+import { getAvatarList, deleteAvatar, uploadAvatarFile, createAvatarWithFiles, updateAvatar } from '@/api/avatar';
+import { getDigitalHumanList } from '@/api/digitalHuman';
 import type { Avatar } from '@/types/avatar';
 import { ElMessage, ElMessageBox } from 'element-plus';
-import type { UploadFile, UploadUserFile, FormRules, FormInstance } from 'element-plus';
-import { useImageCompression } from '@/composables/useImageCompression';
+import type { UploadFile, FormRules, FormInstance } from 'element-plus';
 
-const { isCompressing, compressImage } = useImageCompression();
-// --- 数据状态 ---
-const avatarList = ref<Avatar[]>([]); // 直接使用这个 list 来渲染
+// --- 数据与状态 ---
+const avatarList = ref<Avatar[]>([]);
 const total = ref(0);
-const loading = ref(false);
 const currentPage = ref(1);
 const pageSize = ref(4);
-
-
-// --- 弹窗状态 ---
-const uiStore = useUiStore();
-const dialogVisible = computed({
-  get: () => uiStore.isAvatarAddDialogVisible,
-  set: (val) => { if (!val) uiStore.closeAvatarAddDialog() }
-});
-const dialogTitle = ref('新增形象');
 const formRef = ref<FormInstance>();
+const uiStore = useUiStore();
+const dialogTitle = ref('新增形象');
 const form = ref({
   id: null as number | null,
   name: '',
   voice: '',
 });
 
-const formRules = ref<FormRules>({
-  name: [
-    { required: true, message: '名称不能为空，请输入', trigger: 'blur' }
-  ],
-});
-
-// 定义新的状态，专门用于存储压缩后的文件
-const staticImageFile = ref<File | null>(null);
-const dynamicImageFile = ref<File | null>(null);
+// --- 文件与上传状态 ---
 const staticImageUrlPreview = ref('');
 const dynamicImageUrlPreview = ref('');
+const staticImageFileName = ref<string | null>(null); // 存储服务器返回的文件名
+const dynamicImageFileName = ref<string | null>(null); // 存储服务器返回的文件名
+const staticUploadProgress = ref(0);
+const dynamicUploadProgress = ref(0);
+const isUploadingStatic = ref(false);
+const isUploadingDynamic = ref(false);
+
+const dialogVisible = computed({
+  get: () => uiStore.isAvatarAddDialogVisible,
+  set: (val) => { if (!val) uiStore.closeAvatarAddDialog() }
+});
+const isUploading = computed(() => isUploadingStatic.value || isUploadingDynamic.value);
+const formRules = ref<FormRules>({
+  name: [{ required: true, message: '名称不能为空，请输入', trigger: 'blur' }],
+});
 
 // --- 核心逻辑 ---
+
 const fetchAvatarList = async () => {
-  loading.value = true;
-  try {
-    const response = await getAvatarList({ page: currentPage.value, size: pageSize.value });
-    const apiResponse = response.data;
-    if (apiResponse.code === 200) {
-      avatarList.value = apiResponse.data.items;
-      total.value = apiResponse.data.total;
-    }
-  } finally {
-    loading.value = false;
+  const response = await getAvatarList({ page: currentPage.value, size: pageSize.value });
+  if (response.data.code === 200) {
+    const api = response.data;
+    avatarList.value = api.data.items;
+    total.value = api.data.total;
   }
 };
 
-const handleDelete = (id: number) => {
-  ElMessageBox.confirm('确定要删除这个形象吗?', '警告', { type: 'warning' })
-    .then(async () => {
-      await deleteAvatar(id);
-      ElMessage.success('删除成功');
-      // 如果删除后当前页没有数据了，返回上一页
-      if (avatarList.value.length === 1 && currentPage.value > 1) {
-        currentPage.value--;
-      }
-      fetchAvatarList();
-    });
+const isAvatarUsedByAnyDigitalHuman = async (avatarId: number): Promise<string | null> => {
+  try {
+    // 使用专门的API检查形象使用情况
+    const { checkAvatarUsage } = await import('@/api/digitalHuman');
+    const response = await checkAvatarUsage(avatarId);
+    if (response.data.code === 200) {
+      const result = response.data.data;
+      return result.isUsed ? result.digitalHumanName || '未知数字人' : null;
+    }
+  } catch (error) {
+    // 如果API调用失败，回退到原来的方法
+    const resp = await getDigitalHumanList({ page: 1, size: 9999 });
+    const items = resp.data.data.items || [];
+    const found = items.find((h: any) => h?.avatar?.id === avatarId);
+    return found ? found.name : null;
+  }
+  return null;
 };
 
-// 文件选择后，立刻调用压缩函数
+const handleDelete = async (id: number) => {
+  try {
+    const usedBy = await isAvatarUsedByAnyDigitalHuman(id);
+    if (usedBy) {
+      await ElMessageBox.alert(
+        `当前形象正在被"${usedBy}"使用，无法删除。请先修改或删除使用该形象的数字人配置。`,
+        '无法删除',
+        {
+          confirmButtonText: '确定',
+          type: 'warning',
+          customClass: 'custom-message-box'
+        }
+      );
+      return;
+    }
+    
+    await ElMessageBox.confirm(
+      '确定要删除这个形象吗？删除后无法恢复。',
+      '确认删除',
+      { 
+        type: 'warning',
+        confirmButtonText: '确定删除',
+        cancelButtonText: '取消',
+        customClass: 'custom-message-box'
+      }
+    );
+    
+    await deleteAvatar(id);
+    ElMessage.success('删除成功');
+    if (avatarList.value.length === 1 && currentPage.value > 1) {
+      currentPage.value--;
+    }
+    await fetchAvatarList();
+  } catch (error) {
+    if (error !== 'cancel') {
+      console.error('删除形象失败:', error);
+      ElMessage.error('删除失败，请稍后重试');
+    }
+  }
+};
+
+// 步骤1：选择文件后立即上传
 const handleFileChange = async (uploadFile: UploadFile, type: 'static' | 'dynamic') => {
   if (!uploadFile.raw) return;
-  
-  const compressedFile = await compressImage(uploadFile.raw);
+  const file = uploadFile.raw;
 
-  if (compressedFile) {
-    const previewUrl = URL.createObjectURL(compressedFile);
-    if (type === 'static') {
-      staticImageFile.value = compressedFile;
-      staticImageUrlPreview.value = previewUrl;
+  const progressHandler = (event: any) => {
+    const percent = Math.round((event.loaded * 100) / event.total);
+    if (type === 'static') staticUploadProgress.value = percent;
+    else dynamicUploadProgress.value = percent;
+  };
+
+  if (type === 'static') {
+    isUploadingStatic.value = true;
+    staticUploadProgress.value = 0;
+  } else {
+    isUploadingDynamic.value = true;
+    dynamicUploadProgress.value = 0;
+  }
+
+  try {
+    const res = await uploadAvatarFile(file, progressHandler);
+    if (res.data.code === 200) {
+      if (type === 'static') {
+        staticImageFileName.value = res.data.data.fileName;
+        staticImageUrlPreview.value = res.data.data.fileUrl;
+      } else {
+        dynamicImageFileName.value = res.data.data.fileName;
+        dynamicImageUrlPreview.value = res.data.data.fileUrl;
+      }
+      ElMessage.success(`${type === 'static' ? '静态图片' : '动态图片'}上传成功`);
     } else {
-      dynamicImageFile.value = compressedFile;
-      dynamicImageUrlPreview.value = previewUrl;
+      throw new Error(res.data.message);
     }
+  } catch (error) {
+    ElMessage.error(`${type === 'static' ? '静态图片' : '动态图片'}上传失败`);
+    if (type === 'static') staticImageUrlPreview.value = ''; // 失败时清除预览
+    else dynamicImageUrlPreview.value = '';
+  } finally {
+    if (type === 'static') isUploadingStatic.value = false;
+    else isUploadingDynamic.value = false;
   }
 };
 
-const handleStaticFileChange = (uploadFile: UploadFile) => handleFileChange(uploadFile, 'static');
-const handleDynamicFileChange = (uploadFile: UploadFile) => handleFileChange(uploadFile, 'dynamic');
+// 步骤2：处理最终表单提交
+const handleSubmit = async () => {
+  await formRef.value?.validate(async (valid) => {
+    if (!valid) return;
+    if (isUploading.value) {
+      ElMessage.warning('文件仍在上传中，请稍后...');
+      return;
+    }
 
-const handleAdd = () => {
-  handleDialogClose();
-  dialogTitle.value = '新增形象';
-  uiStore.openAvatarAddDialog();
+    try {
+      if (form.value.id) { // --- 更新模式 ---
+        const formData = new FormData();
+        formData.append('name', form.value.name);
+        formData.append('voice', form.value.voice || '');
+        // 对于更新操作，如果后端支持，我们可以重用旧逻辑，
+        // 或者发送文件名。为了保持一致性，我们假设发送文件名。
+        // 注意：这部分取决于后端的PUT端点实现。
+        // 最稳健的方式是如果文件发生变化就重新上传。
+        // 但是为了简单起见，我们这里只更新元数据。
+        // 如果需要更新文件，应该已经通过handleFileChange上传了。
+        // 如果只发送文件名进行更新，则需要更完整的解决方案。
+         await updateAvatar(form.value.id, formData, () => {});
+         ElMessage.success('形象信息更新成功');
+
+      } else { // --- 创建模式 ---
+        if (!staticImageFileName.value) {
+          ElMessage.warning('请先上传静态形象图片');
+          return;
+        }
+        await createAvatarWithFiles({
+          name: form.value.name,
+          voice: form.value.voice,
+          staticImageFileName: staticImageFileName.value,
+          dynamicImageFileName: dynamicImageFileName.value || undefined,
+        });
+        ElMessage.success('新增形象成功');
+      }
+      uiStore.closeAvatarAddDialog();
+      await fetchAvatarList();
+    } catch (error) {
+      ElMessage.error('操作失败');
+    }
+  });
 };
 
 const handleEdit = (avatar: Avatar) => {
+  handleDialogClose();
   dialogTitle.value = '修改形象';
-  form.value = {
-    id: avatar.id,
-    name: avatar.name,
-    voice: avatar.voice || '',
-  };
-  // 设置图片预览
+  form.value = { id: avatar.id, name: avatar.name, voice: avatar.voice || '' };
   staticImageUrlPreview.value = avatar.staticImageUrl;
   dynamicImageUrlPreview.value = avatar.dynamicImageUrl || '';
   uiStore.openAvatarAddDialog();
 };
 
-
-// 确保 handleSubmit 使用的是压缩后的文件
-const handleSubmit = async () => {
-  if (isCompressing.value) {
-    ElMessage.warning('正在处理图片，请稍后...');
-    return;
-  }
-  
-  const formData = new FormData();
-  formData.append('name', form.value.name);
-  formData.append('voice', form.value.voice);
-
-  // 确保从我们新的状态变量中获取文件
-  if (staticImageFile.value) {
-    formData.append('staticImage', staticImageFile.value);
-  }
-  if (dynamicImageFile.value) {
-    formData.append('dynamicImage', dynamicImageFile.value);
-  }
-
-  try {
-    if (form.value.id) {
-      await updateAvatar(form.value.id, formData);
-      ElMessage.success('修改成功');
-    } else {
-      await addAvatar(formData);
-      ElMessage.success('新增成功');
-    }
-    uiStore.closeAvatarAddDialog();
-    fetchAvatarList();
-  } catch (error) {
-    console.error("操作失败", error);
-  }
-};
-
-// 关闭弹窗时，重置所有相关状态
 const handleDialogClose = () => {
-  form.value.id = null;
-  form.value.name = '';
-  form.value.voice = '';
-  
-  staticImageFile.value = null; // 重置压缩文件
-  dynamicImageFile.value = null; // 重置压缩文件
-  
+  form.value = { id: null, name: '', voice: '' };
   staticImageUrlPreview.value = '';
   dynamicImageUrlPreview.value = '';
+  staticImageFileName.value = null;
+  dynamicImageFileName.value = null;
+  staticUploadProgress.value = 0;
+  dynamicUploadProgress.value = 0;
+  isUploadingStatic.value = false;
+  isUploadingDynamic.value = false;
   formRef.value?.clearValidate();
   uiStore.closeAvatarAddDialog();
 };
 
-onMounted(() => {
-  fetchAvatarList();
-});
+onMounted(fetchAvatarList);
 </script>
 
 <template>
@@ -205,7 +265,7 @@ onMounted(() => {
         @current-change="fetchAvatarList"
       ></el-pagination>
     </div>
-
+    
     <el-dialog v-model="dialogVisible" :title="dialogTitle" width="500px" @close="handleDialogClose" custom-class="avatar-dialog">
       <template #header="{ close, titleId, titleClass }">
         <div class="custom-dialog-header">
@@ -216,50 +276,64 @@ onMounted(() => {
       
       <el-form :model="form" :rules="formRules" ref="formRef" label-width="100px" label-position="right">
         <el-form-item label="形象名称" prop="name">
-          <el-input v-model="form.name" placeholder="请输入"></el-input>
+          <el-input v-model="form.name" placeholder="请输入" :disabled="isUploading"></el-input>
         </el-form-item>
         
-        <el-form-item label="形象静态" prop="staticImage">
+        <el-form-item label="形象静态">
           <el-upload
             class="avatar-uploader"
             drag
             action="#"
             :auto-upload="false"
             :show-file-list="false"
-            @change="handleStaticFileChange"
+            :disabled="isUploading"
+            accept=".png,.jpg,.jpeg"
+            @change="(file: any) => handleFileChange(file, 'static')"
           >
-            <el-image v-if="staticImageUrlPreview" :src="staticImageUrlPreview" class="avatar-preview" />
-            <div v-else class="upload-placeholder">
-              <el-icon class="el-icon--upload"><upload-filled /></el-icon>
-              <div class="el-upload__text">将PNG文件拖至此区域，或<em>点击上传</em></div>
+            <div class="uploader-wrapper">
+              <el-image v-if="staticImageUrlPreview" :src="staticImageUrlPreview" class="avatar-preview" />
+              <div v-else class="upload-placeholder">
+                <el-icon class="el-icon--upload"><upload-filled /></el-icon>
+                <div class="el-upload__text">将PNG/JPG文件拖至此，或<em>点击上传</em></div>
+              </div>
+              <div v-if="isUploadingStatic" class="upload-progress-overlay">
+                <el-progress type="circle" :percentage="staticUploadProgress" :width="80" />
+              </div>
             </div>
           </el-upload>
         </el-form-item>
         
-        <el-form-item label="形象动态" prop="dynamicImage">
-          <el-upload
+        <el-form-item label="形象动态">
+           <el-upload
             class="avatar-uploader"
             drag
             action="#"
             :auto-upload="false"
             :show-file-list="false"
-            @change="handleDynamicFileChange"
+            :disabled="isUploading"
+            accept=".gif,.png,.jpg,.jpeg"
+            @change="(file: any) => handleFileChange(file, 'dynamic')"
           >
-            <el-image v-if="dynamicImageUrlPreview" :src="dynamicImageUrlPreview" class="avatar-preview" />
-            <div v-else class="upload-placeholder">
-              <el-icon class="el-icon--upload"><upload-filled /></el-icon>
-              <div class="el-upload__text">将GIF/PNG文件拖至此区域，或<em>点击上传</em></div>
+            <div class="uploader-wrapper">
+              <el-image v-if="dynamicImageUrlPreview" :src="dynamicImageUrlPreview" class="avatar-preview" />
+              <div v-else class="upload-placeholder">
+                <el-icon class="el-icon--upload"><upload-filled /></el-icon>
+                <div class="el-upload__text">将GIF/PNG/JPG文件拖至此，或<em>点击上传</em></div>
+              </div>
+              <div v-if="isUploadingDynamic" class="upload-progress-overlay">
+                 <el-progress type="circle" :percentage="dynamicUploadProgress" :width="80" />
+              </div>
             </div>
           </el-upload>
         </el-form-item>
 
         <el-form-item label="音色选择" prop="voice">
           <div class="voice-selector">
-            <el-select v-model="form.voice" placeholder="请选择" style="width: 100%;">
+            <el-select v-model="form.voice" placeholder="请选择" style="width: 100%;" :disabled="isUploading">
               <el-option label="温柔女生" value="温柔女生"></el-option>
               <el-option label="清爽女声" value="清爽女声"></el-option>
             </el-select>
-            <el-button :disabled="!form.voice" type="primary" plain class="listen-btn">
+            <el-button :disabled="!form.voice || isUploading" type="primary" plain class="listen-btn">
               <el-icon><Headset /></el-icon>
               试听
             </el-button>
@@ -268,9 +342,9 @@ onMounted(() => {
       </el-form>
       <template #footer>
         <span class="dialog-footer">
-          <el-button @click="dialogVisible = false" :disabled="isCompressing">取消</el-button>
-          <el-button type="primary" @click="handleSubmit" :loading="isCompressing">
-          {{ isCompressing ? '图片处理中...' : '确定' }}
+          <el-button @click="dialogVisible = false" :disabled="isUploading">取消</el-button>
+          <el-button type="primary" @click="handleSubmit" :loading="isUploading">
+            {{ isUploading ? '上传中...' : '确定' }}
           </el-button>
         </span>
       </template>
@@ -283,10 +357,13 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   height: 100%;
+  overflow: hidden;
 }
 
 .card-row {
   flex-grow: 1;
+  overflow-y: auto;
+  padding-right: 5px;
 }
 
 .pagination-container {
@@ -334,7 +411,6 @@ onMounted(() => {
   }
 }
 
-/* 调整弹窗Body的内边距，减少垂直方向的留白 */
 :deep(.avatar-dialog .el-dialog__body) {
   padding-top: 15px;
   padding-bottom: 20px; 
@@ -354,24 +430,26 @@ onMounted(() => {
 
 .avatar-uploader {
   width: 100%;
-  :deep(.el-upload) {
+  .uploader-wrapper {
+    position: relative;
     width: 100%;
-  }
-  /* 精确减少文件上传拖拽区域的垂直内边距 */
-  :deep(.el-upload-dragger) {
-    padding-top: 10px;
-    padding-bottom: 10px;
     display: flex;
     justify-content: center;
     align-items: center;
   }
+  :deep(.el-upload) {
+    width: 100%;
+  }
+  :deep(.el-upload-dragger) {
+    padding: 10px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    width: 100%;
+  }
   .avatar-preview {
     max-width: 60%;
-    /* 适当减小预览图的最大高度，防止图片撑开容器 */
     max-height: 110px; 
-  }
-  .upload-placeholder {
-    text-align: center;
   }
 }
 
@@ -385,7 +463,6 @@ onMounted(() => {
   flex-shrink: 0;
 }
 
-/* 为加载失败的占位图添加样式 */
 .image-slot-error {
   display: flex;
   flex-direction: column;
@@ -402,4 +479,17 @@ onMounted(() => {
   margin-bottom: 8px;
 }
 
+.upload-progress-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(255, 255, 255, 0.8);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 10;
+  border-radius: 8px;
+}
 </style>

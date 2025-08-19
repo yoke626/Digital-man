@@ -6,8 +6,10 @@ import type { Scene } from '@/types/scene';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import type { UploadFile } from 'element-plus';
 import { useImageCompression } from '@/composables/useImageCompression';
+import { useUploadStore } from '@/stores/upload';
 
 const { isCompressing, compressImage } = useImageCompression();
+const uploadStore = useUploadStore();
 
 // --- 数据状态 ---
 const sceneList = ref<Scene[]>([]);
@@ -42,15 +44,21 @@ const form = ref<{
   sceneFile: null,
 });
 const fileUrlPreview = ref('');
+// 已上传标记，避免“确定”再次上传
+const sceneUploaded = ref(false);
+
+// 上传状态
+const isUploading = computed(() => uploadStore.isUploading);
+const uploadProgress = computed(() => uploadStore.progress);
 
 // --- 核心逻辑 ---
 
 // 监听Pinia中弹窗状态的变化
 watch(() => uiStore.isSceneAddDialogVisible, (newValue) => {
-  // 仅在弹窗从“关闭”变为“打开”时执行
+  // 仅在弹窗从"关闭"变为"打开"时执行
   if (newValue) {
     // 如果表单ID不是一个有效的数字（即它为null），
-    // 证明这不是一个“修改”操作，而是一个“新增”操作，
+    // 证明这不是一个"修改"操作，而是一个"新增"操作，
     if (typeof form.value.id !== 'number') {
       dialogTitle.value = '新增场景';
     }
@@ -98,13 +106,16 @@ const handleSelect = async (id: number) => {
   }
 };
 
-// 检查文件类型
+// 检查是否为图片预览：支持 blob/object URL
 const isImage = (url: string) => {
+  if (!url) return false;
+  // blob/object URL 直接认为是图片预览（由 input 选择生成）
+  if (url.startsWith('blob:') || url.startsWith('data:')) return true;
   const imageExtensions = ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg'];
-  return imageExtensions.some(ext => url.toLowerCase().endsWith(ext));
+  return imageExtensions.some(ext => url.toLowerCase().includes(ext));
 };
 
-// 3. 文件选择处理函数现在调用压缩逻辑
+// 文件选择处理函数，立即上传
 const handleFileChange = async (uploadFile: UploadFile) => {
   if (!uploadFile.raw) return;
 
@@ -115,6 +126,31 @@ const handleFileChange = async (uploadFile: UploadFile) => {
     // 存储最终的文件（可能是压缩后的图片，也可能是原始的非图片文件）
     form.value.sceneFile = finalFile;
     fileUrlPreview.value = URL.createObjectURL(finalFile);
+    
+    // 立即上传文件
+    await uploadFileToServer(finalFile);
+  }
+};
+
+// 上传文件到后端
+const uploadFileToServer = async (file: File) => {
+  const formData = new FormData();
+  formData.append('name', form.value.name || 'temp');
+  formData.append('sceneFile', file);
+
+  try {
+    const resp = form.value.id
+      ? await updateScene(form.value.id, formData)
+      : await addScene(formData);
+    const apiRes: any = resp?.data;
+    if (!form.value.id && apiRes?.data?.id) {
+      form.value.id = apiRes.data.id;
+    }
+    sceneUploaded.value = true;
+    ElMessage.success('场景文件上传成功');
+  } catch (error) {
+    ElMessage.error('场景文件上传失败');
+    console.error("上传失败", error);
   }
 };
 
@@ -130,32 +166,19 @@ const handleEdit = (scene: Scene) => {
   uiStore.openSceneAddDialog();
 };
 
-// 4. handleSubmit 检查压缩状态并使用压缩后的文件
+// handleSubmit 仅刷新列表，不再重复上传
 const handleSubmit = async () => {
-  if (isCompressing.value) {
-    ElMessage.warning('正在处理图片，请稍后...');
+  if (isUploading.value) {
+    ElMessage.warning('正在上传文件，请稍后...');
     return;
   }
-
-  const formData = new FormData();
-  formData.append('name', form.value.name);
-  if (form.value.sceneFile) {
-    formData.append('sceneFile', form.value.sceneFile);
+  if (!form.value.id) {
+    ElMessage.warning('请先选择并上传场景文件');
+    return;
   }
-
-  try {
-    if (form.value.id) {
-      await updateScene(form.value.id, formData);
-      ElMessage.success('修改成功');
-    } else {
-      await addScene(formData);
-      ElMessage.success('新增成功');
-    }
-    uiStore.closeSceneAddDialog();
-    fetchSceneList();
-  } catch (error) {
-    console.error("操作失败", error);
-  }
+  // 仅关闭并刷新列表
+  uiStore.closeSceneAddDialog();
+  await fetchSceneList();
 };
 
 // 关闭弹窗并重置表单
@@ -165,6 +188,7 @@ const handleDialogClose = () => {
   form.value.name = '';
   form.value.sceneFile = null;
   fileUrlPreview.value = '';
+  sceneUploaded.value = false;
   formRef.value?.clearValidate();
   // 确保关闭动作也同步到store
   uiStore.closeSceneAddDialog();
@@ -217,6 +241,16 @@ onMounted(() => {
     </div>
 
     <el-dialog v-model="dialogVisible" :title="dialogTitle" width="500px" @close="handleDialogClose">
+      <!-- 上传进度条 -->
+      <div v-if="isUploading" class="upload-progress-container">
+        <el-progress 
+          :percentage="uploadProgress" 
+          :stroke-width="4"
+          status="success"
+        />
+        <div class="upload-status">正在上传文件... {{ uploadProgress }}%</div>
+      </div>
+      
       <el-form :model="form" ref="formRef" label-width="100px" label-position="right">
         <el-form-item label="场景名称" prop="name">
           <el-input v-model="form.name" placeholder="请输入场景名称"></el-input>
@@ -248,9 +282,9 @@ onMounted(() => {
       </el-form>
       <template #footer>
         <span class="dialog-footer">
-          <el-button @click="dialogVisible = false" :disabled="isCompressing">取消</el-button>
-          <el-button type="primary" @click="handleSubmit" :loading="isCompressing">
-            {{ isCompressing ? '图片处理中...' : '确定' }}
+          <el-button @click="dialogVisible = false" :disabled="isUploading">取消</el-button>
+          <el-button type="primary" @click="handleSubmit" :loading="isUploading" :disabled="isUploading">
+            {{ isUploading ? '上传中...' : '确定' }}
           </el-button>
         </span>
       </template>
@@ -263,11 +297,17 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   height: 100%;
+  overflow: hidden;
 }
 .card-row {
   flex-grow: 1;
+  /* 移除内部滚动，交由外层布局处理，避免右侧出现多余滚动条 */
+  overflow: visible;
+  /* 取消为滚动条预留的右内边距，防止出现额外空白 */
+  padding-right: 0;
   .el-col {
-    height: 100%;
+    /* 列高度自适应内容，避免被强制拉满导致容器溢出 */
+    height: auto;
   }
 }
 .pagination-container {
@@ -276,7 +316,8 @@ onMounted(() => {
 }
 .scene-card {
   border-radius: 12px;
-  height: 100%;
+  /* 使用内容高度，避免与父级高度耦合产生多余滚动 */
+  height: auto;
   display: flex;
   flex-direction: column;
 }
@@ -313,5 +354,22 @@ onMounted(() => {
 }
 .select-button {
   width: 100%;
+}
+
+/* 上传进度条样式 */
+.upload-progress-container {
+  margin-bottom: 20px;
+  padding: 15px;
+  background-color: #f8f9fa;
+  border-radius: 8px;
+  border: 1px solid #e9ecef;
+}
+
+.upload-status {
+  margin-top: 8px;
+  text-align: center;
+  color: #409eff;
+  font-size: 14px;
+  font-weight: 500;
 }
 </style>
