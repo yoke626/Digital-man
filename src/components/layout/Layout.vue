@@ -3,7 +3,7 @@ import { useRoute } from 'vue-router'
 import { useUiStore } from '@/stores/ui';
 import { Plus, SwitchButton } from '@element-plus/icons-vue' 
 import { useUserStore } from '@/stores/user'
-import GlobalUploader from '../common/GlobalUploader.vue';
+//import GlobalUploader from '../common/GlobalUploader.vue';
 
 const route = useRoute();
 const uiStore = useUiStore(); 
@@ -164,6 +164,8 @@ const handleAddButtonClick = () => {
   padding: 20px;
   /* 从上到下，淡紫蓝到白色的渐变背景 */
   background-image: linear-gradient(to bottom, #f7f8fa, #cfdafa);
+  /* 防止出现滚动条 */
+  overflow: hidden;
 }
 
 .page-title-icon {
@@ -198,6 +200,8 @@ const handleAddButtonClick = () => {
 .page-content {
   /* 让 page-content 占据所有可用的垂直空间 */
   flex-grow: 1;
+  /* 防止内容溢出导致滚动条 */
+  overflow: hidden;
 }
 
 .header {

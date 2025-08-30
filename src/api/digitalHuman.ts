@@ -45,3 +45,11 @@ export const deleteDigitalHuman = (id: number) => {
     method: 'DELETE',
   })
 }
+
+// 6. 检查形象是否被数字人使用
+export const checkAvatarUsage = (avatarId: number) => {
+  return request<ApiResponse<{ isUsed: boolean; digitalHumanName?: string }>>({
+    url: `/digital-humans/check-avatar-usage/${avatarId}`,
+    method: 'GET',
+  })
+}

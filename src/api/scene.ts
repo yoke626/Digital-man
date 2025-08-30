@@ -1,6 +1,7 @@
 import request from '@/utils/request'
 import type { Scene } from '@/types/scene'
 import type { ApiResponse, PaginatedData, PaginationParams } from '@/types/api'
+import { useUploadStore } from '@/stores/upload'
 
 //1. 获取场景列表（分页）
 export const getSceneList = (params: PaginationParams) => {
@@ -29,6 +30,9 @@ export const deleteScene = (id: number) => {
 
 //4. 新增场景 (使用 FormData)
 export const addScene = (data: FormData) => {
+  const uploadStore = useUploadStore();
+  uploadStore.startUpload();
+
   return request<ApiResponse<Scene>>({
     url: '/scenes',
     method: 'POST',
@@ -36,12 +40,20 @@ export const addScene = (data: FormData) => {
     headers: {
       'Content-Type': 'multipart/form-data',
     },
-  })
+    onUploadProgress: (progressEvent: any) => {
+      const percent = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+      uploadStore.updateProgress(percent);
+    },
+  }).finally(() => {
+    uploadStore.finishUpload();
+  });
 }
-
 
 // 5. 修改场景 (使用 FormData)
 export const updateScene = (id: number, data: FormData) => {
+  const uploadStore = useUploadStore();
+  uploadStore.startUpload();
+
   return request<ApiResponse<Scene>>({
     url: `/scenes/${id}`,
     method: 'PUT',
@@ -49,5 +61,11 @@ export const updateScene = (id: number, data: FormData) => {
     headers: {
       'Content-Type': 'multipart/form-data',
     },
-  })
+    onUploadProgress: (progressEvent: any) => {
+      const percent = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+      uploadStore.updateProgress(percent);
+    },
+  }).finally(() => {
+    uploadStore.finishUpload();
+  });
 }

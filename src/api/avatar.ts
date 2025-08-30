@@ -1,45 +1,55 @@
 import request from '@/utils/request'
 import type { Avatar } from '@/types/avatar'
 import type { ApiResponse, PaginatedData, PaginationParams } from '@/types/api'
-import { useUploadStore } from '@/stores/upload'; // 1. 引入 upload store
 
-// 2. 新增/修改形象的API函数，不再需要 progress 回调
-export const addAvatar = (data: FormData) => {
-  const uploadStore = useUploadStore();
-  uploadStore.startUpload(); // 3. 开始上传时，通知store
 
-  return request<ApiResponse<Avatar>>({
-    url: '/avatars',
+export const uploadAvatarFile = (file: File, onUploadProgress: (e: any) => void) => {
+  const formData = new FormData();
+  formData.append('file', file);
+
+  return request<ApiResponse<{ fileName: string; fileUrl: string }>>({
+    url: '/avatars/upload',
     method: 'POST',
-    data,
-    headers: { 'Content-Type': 'multipart/form-data' },
-    // 4. 在axios配置中更新进度
-    onUploadProgress: (progressEvent: any) => {
-      const percent = Math.round((progressEvent.loaded * 100) / progressEvent.total);
-      uploadStore.updateProgress(percent);
-    },
-  }).finally(() => {
-    uploadStore.finishUpload(); // 5. 无论成功失败，都通知store结束
+    data: formData,
+    onUploadProgress,
   });
 };
 
-export const updateAvatar = (id: number, data: FormData) => {
-  const uploadStore = useUploadStore();
-  uploadStore.startUpload();
+
+export const createAvatarWithFiles = (payload: { name: string; voice?: string; staticImageFileName: string; dynamicImageFileName?: string }) => {
+  const params = new URLSearchParams();
+  params.append('name', payload.name);
+  if (payload.voice) params.append('voice', payload.voice);
+  params.append('staticImageFileName', payload.staticImageFileName);
+  if (payload.dynamicImageFileName) params.append('dynamicImageFileName', payload.dynamicImageFileName);
 
   return request<ApiResponse<Avatar>>({
-    url: `/avatars/${id}`,
-    method: 'PUT',
-    data,
-    headers: { 'Content-Type': 'multipart/form-data' },
-    onUploadProgress: (progressEvent: any) => {
-      const percent = Math.round((progressEvent.loaded * 100) / progressEvent.total);
-      uploadStore.updateProgress(percent);
-    },
-  }).finally(() => {
-    uploadStore.finishUpload();
+    url: '/avatars/create-with-files',
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    data: params,
   });
 };
+
+
+export const updateAvatarWithFiles = (id: number, payload: { name?: string; voice?: string; staticImageFileName?: string; dynamicImageFileName?: string }) => {
+  const params = new URLSearchParams();
+  // Only append parameters if they have a value
+  if (payload.name) params.append('name', payload.name);
+  if (payload.voice) params.append('voice', payload.voice);
+  if (payload.staticImageFileName) params.append('staticImageFileName', payload.staticImageFileName);
+  if (payload.dynamicImageFileName) params.append('dynamicImageFileName', payload.dynamicImageFileName);
+
+  return request<ApiResponse<Avatar>>({
+    url: `/avatars/${id}/update-with-files`,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    data: params,
+  });
+};
+
+
+
 
 export const getAvatarList = (params: PaginationParams) => {
   return request<ApiResponse<PaginatedData<Avatar>>>({
