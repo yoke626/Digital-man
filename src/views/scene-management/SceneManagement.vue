@@ -297,30 +297,38 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   height: 100%;
-  overflow: hidden;
 }
+
 .card-row {
   flex-grow: 1;
-  /* 移除内部滚动，交由外层布局处理，避免右侧出现多余滚动条 */
-  overflow: visible;
-  /* 取消为滚动条预留的右内边距，防止出现额外空白 */
-  padding-right: 0;
-  .el-col {
-    /* 列高度自适应内容，避免被强制拉满导致容器溢出 */
-    height: auto;
+  overflow: hidden;
+  padding: 2px 5px 2px 2px; 
+  
+
+  &.el-row {
+    display: flex;
+    flex-wrap: wrap;
+  }
+
+  & > .el-col {
+    display: flex; 
+    margin-bottom: 20px;
   }
 }
+
 .pagination-container {
   margin-top: auto;
   padding-top: 20px;
+  flex-shrink: 0;
 }
+
 .scene-card {
   border-radius: 12px;
-  /* 使用内容高度，避免与父级高度耦合产生多余滚动 */
-  height: auto;
+  width: 100%;
   display: flex;
-  flex-direction: column;
+  flex-direction: column; 
 }
+
 .card-header {
   flex-shrink: 0;
   display: flex;
@@ -329,12 +337,15 @@ onMounted(() => {
   padding: 15px 20px;
   border-bottom: 1px solid #ebeef5;
 }
+
 .scene-name {
   font-weight: 600;
 }
+
 .actions .el-link {
   margin-left: 15px;
 }
+
 .card-body {
   flex-grow: 1;
   display: flex;
@@ -343,20 +354,29 @@ onMounted(() => {
   padding: 10px;
   background-color: #f9f9f9;
   overflow: hidden;
+  
+ 
+  min-height: 250px;
+  height: 385px; 
 }
+
 .scene-image {
   max-width: 100%;
   max-height: 100%;
+  object-fit: contain; 
 }
+
 .card-footer {
   flex-shrink: 0;
   padding: 15px 20px;
+  border-top: 1px solid #ebeef5; 
 }
+
 .select-button {
   width: 100%;
 }
 
-/* 上传进度条样式 */
+
 .upload-progress-container {
   margin-bottom: 20px;
   padding: 15px;
@@ -372,4 +392,11 @@ onMounted(() => {
   font-size: 14px;
   font-weight: 500;
 }
+
+.preview-container, .file-placeholder {
+  
+  max-height: 150px;
+}
 </style>
+
+

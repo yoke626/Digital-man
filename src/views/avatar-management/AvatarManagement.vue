@@ -1,13 +1,14 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue';
 import { useUiStore } from '@/stores/ui';
-import { getAvatarList, deleteAvatar, uploadAvatarFile, createAvatarWithFiles, updateAvatar } from '@/api/avatar';
+// 引入修正后的 updateAvatarWithFiles
+import { getAvatarList, deleteAvatar, uploadAvatarFile, createAvatarWithFiles, updateAvatarWithFiles } from '@/api/avatar';
 import { getDigitalHumanList } from '@/api/digitalHuman';
 import type { Avatar } from '@/types/avatar';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import type { UploadFile, FormRules, FormInstance } from 'element-plus';
 
-// --- 数据与状态 ---
+// --- 数据与状态 (无变化) ---
 const avatarList = ref<Avatar[]>([]);
 const total = ref(0);
 const currentPage = ref(1);
@@ -21,11 +22,11 @@ const form = ref({
   voice: '',
 });
 
-// --- 文件与上传状态 ---
+// --- 文件与上传状态 (无变化) ---
 const staticImageUrlPreview = ref('');
 const dynamicImageUrlPreview = ref('');
-const staticImageFileName = ref<string | null>(null); // 存储服务器返回的文件名
-const dynamicImageFileName = ref<string | null>(null); // 存储服务器返回的文件名
+const newStaticImageFileName = ref<string | null>(null); // 存储新上传的文件名
+const newDynamicImageFileName = ref<string | null>(null); // 存储新上传的文件名
 const staticUploadProgress = ref(0);
 const dynamicUploadProgress = ref(0);
 const isUploadingStatic = ref(false);
@@ -40,7 +41,7 @@ const formRules = ref<FormRules>({
   name: [{ required: true, message: '名称不能为空，请输入', trigger: 'blur' }],
 });
 
-// --- 核心逻辑 ---
+// --- 核心逻辑 (大部分无变化) ---
 
 const fetchAvatarList = async () => {
   const response = await getAvatarList({ page: currentPage.value, size: pageSize.value });
@@ -52,22 +53,10 @@ const fetchAvatarList = async () => {
 };
 
 const isAvatarUsedByAnyDigitalHuman = async (avatarId: number): Promise<string | null> => {
-  try {
-    // 使用专门的API检查形象使用情况
-    const { checkAvatarUsage } = await import('@/api/digitalHuman');
-    const response = await checkAvatarUsage(avatarId);
-    if (response.data.code === 200) {
-      const result = response.data.data;
-      return result.isUsed ? result.digitalHumanName || '未知数字人' : null;
-    }
-  } catch (error) {
-    // 如果API调用失败，回退到原来的方法
     const resp = await getDigitalHumanList({ page: 1, size: 9999 });
     const items = resp.data.data.items || [];
     const found = items.find((h: any) => h?.avatar?.id === avatarId);
     return found ? found.name : null;
-  }
-  return null;
 };
 
 const handleDelete = async (id: number) => {
@@ -76,27 +65,13 @@ const handleDelete = async (id: number) => {
     if (usedBy) {
       await ElMessageBox.alert(
         `当前形象正在被"${usedBy}"使用，无法删除。请先修改或删除使用该形象的数字人配置。`,
-        '无法删除',
-        {
-          confirmButtonText: '确定',
-          type: 'warning',
-          customClass: 'custom-message-box'
-        }
+        '无法删除', { confirmButtonText: '确定', type: 'warning' }
       );
       return;
     }
-    
-    await ElMessageBox.confirm(
-      '确定要删除这个形象吗？删除后无法恢复。',
-      '确认删除',
-      { 
-        type: 'warning',
-        confirmButtonText: '确定删除',
-        cancelButtonText: '取消',
-        customClass: 'custom-message-box'
-      }
+    await ElMessageBox.confirm( '确定要删除这个形象吗？删除后无法恢复。', '确认删除',
+      { type: 'warning', confirmButtonText: '确定删除', cancelButtonText: '取消' }
     );
-    
     await deleteAvatar(id);
     ElMessage.success('删除成功');
     if (avatarList.value.length === 1 && currentPage.value > 1) {
@@ -105,23 +80,19 @@ const handleDelete = async (id: number) => {
     await fetchAvatarList();
   } catch (error) {
     if (error !== 'cancel') {
-      console.error('删除形象失败:', error);
       ElMessage.error('删除失败，请稍后重试');
     }
   }
 };
 
-// 步骤1：选择文件后立即上传
 const handleFileChange = async (uploadFile: UploadFile, type: 'static' | 'dynamic') => {
   if (!uploadFile.raw) return;
   const file = uploadFile.raw;
-
   const progressHandler = (event: any) => {
     const percent = Math.round((event.loaded * 100) / event.total);
     if (type === 'static') staticUploadProgress.value = percent;
     else dynamicUploadProgress.value = percent;
   };
-
   if (type === 'static') {
     isUploadingStatic.value = true;
     staticUploadProgress.value = 0;
@@ -129,16 +100,15 @@ const handleFileChange = async (uploadFile: UploadFile, type: 'static' | 'dynami
     isUploadingDynamic.value = true;
     dynamicUploadProgress.value = 0;
   }
-
   try {
     const res = await uploadAvatarFile(file, progressHandler);
     if (res.data.code === 200) {
       if (type === 'static') {
-        staticImageFileName.value = res.data.data.fileName;
-        staticImageUrlPreview.value = res.data.data.fileUrl;
+        newStaticImageFileName.value = res.data.data.fileName;
+        staticImageUrlPreview.value = URL.createObjectURL(file);
       } else {
-        dynamicImageFileName.value = res.data.data.fileName;
-        dynamicImageUrlPreview.value = res.data.data.fileUrl;
+        newDynamicImageFileName.value = res.data.data.fileName;
+        dynamicImageUrlPreview.value = URL.createObjectURL(file);
       }
       ElMessage.success(`${type === 'static' ? '静态图片' : '动态图片'}上传成功`);
     } else {
@@ -146,7 +116,7 @@ const handleFileChange = async (uploadFile: UploadFile, type: 'static' | 'dynami
     }
   } catch (error) {
     ElMessage.error(`${type === 'static' ? '静态图片' : '动态图片'}上传失败`);
-    if (type === 'static') staticImageUrlPreview.value = ''; // 失败时清除预览
+    if (type === 'static') staticImageUrlPreview.value = '';
     else dynamicImageUrlPreview.value = '';
   } finally {
     if (type === 'static') isUploadingStatic.value = false;
@@ -154,7 +124,7 @@ const handleFileChange = async (uploadFile: UploadFile, type: 'static' | 'dynami
   }
 };
 
-// 步骤2：处理最终表单提交
+// [核心修改] 步骤2：处理最终表单提交
 const handleSubmit = async () => {
   await formRef.value?.validate(async (valid) => {
     if (!valid) return;
@@ -165,29 +135,25 @@ const handleSubmit = async () => {
 
     try {
       if (form.value.id) { // --- 更新模式 ---
-        const formData = new FormData();
-        formData.append('name', form.value.name);
-        formData.append('voice', form.value.voice || '');
-        // 对于更新操作，如果后端支持，我们可以重用旧逻辑，
-        // 或者发送文件名。为了保持一致性，我们假设发送文件名。
-        // 注意：这部分取决于后端的PUT端点实现。
-        // 最稳健的方式是如果文件发生变化就重新上传。
-        // 但是为了简单起见，我们这里只更新元数据。
-        // 如果需要更新文件，应该已经通过handleFileChange上传了。
-        // 如果只发送文件名进行更新，则需要更完整的解决方案。
-         await updateAvatar(form.value.id, formData, () => {});
-         ElMessage.success('形象信息更新成功');
+        // 调用修正后的 updateAvatarWithFiles 接口
+        await updateAvatarWithFiles(form.value.id, {
+          name: form.value.name,
+          voice: form.value.voice,
+          staticImageFileName: newStaticImageFileName.value || undefined,
+          dynamicImageFileName: newDynamicImageFileName.value || undefined,
+        });
+        ElMessage.success('形象信息更新成功');
 
-      } else { // --- 创建模式 ---
-        if (!staticImageFileName.value) {
+      } else { // --- 创建模式 (逻辑不变) ---
+        if (!newStaticImageFileName.value) {
           ElMessage.warning('请先上传静态形象图片');
           return;
         }
         await createAvatarWithFiles({
           name: form.value.name,
           voice: form.value.voice,
-          staticImageFileName: staticImageFileName.value,
-          dynamicImageFileName: dynamicImageFileName.value || undefined,
+          staticImageFileName: newStaticImageFileName.value,
+          dynamicImageFileName: newDynamicImageFileName.value || undefined,
         });
         ElMessage.success('新增形象成功');
       }
@@ -197,6 +163,12 @@ const handleSubmit = async () => {
       ElMessage.error('操作失败');
     }
   });
+};
+
+const handleAdd = () => {
+  handleDialogClose();
+  dialogTitle.value = '新增形象';
+  uiStore.openAvatarAddDialog();
 };
 
 const handleEdit = (avatar: Avatar) => {
@@ -212,8 +184,8 @@ const handleDialogClose = () => {
   form.value = { id: null, name: '', voice: '' };
   staticImageUrlPreview.value = '';
   dynamicImageUrlPreview.value = '';
-  staticImageFileName.value = null;
-  dynamicImageFileName.value = null;
+  newStaticImageFileName.value = null; // 清空新上传的文件名
+  newDynamicImageFileName.value = null; // 清空新上传的文件名
   staticUploadProgress.value = 0;
   dynamicUploadProgress.value = 0;
   isUploadingStatic.value = false;
